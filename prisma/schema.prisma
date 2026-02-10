@@ -1,0 +1,290 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageChannel {
+  EMAIL
+  SMS
+  SYSTEM
+}
+
+enum BookingStatus {
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum FormSubmissionStatus {
+  PENDING
+  COMPLETED
+  OVERDUE
+}
+
+enum IntegrationType {
+  EMAIL
+  SMS
+  CALENDAR
+}
+
+enum AlertType {
+  MISSED_MESSAGE
+  UNCONFIRMED_BOOKING
+  OVERDUE_FORM
+  LOW_INVENTORY
+  SYSTEM
+}
+
+// ─── Users & Workspace ───────────────────────────────────
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        Role     @default(STAFF)
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  permissions StaffPermission?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Workspace {
+  id              String   @id @default(uuid())
+  name            String
+  address         String?
+  timezone        String   @default("UTC")
+  contactEmail    String?
+  isActive        Boolean  @default(false)
+  onboardingStep  Int      @default(1)
+
+  users           User[]
+  integrations    Integration[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  serviceTypes    ServiceType[]
+  bookings        Booking[]
+  formTemplates   FormTemplate[]
+  inventoryItems  InventoryItem[]
+  automationLogs  AutomationLog[]
+  alerts          Alert[]
+  staffInvitations StaffInvitation[]
+  calendarConnections CalendarConnection[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── Integrations ────────────────────────────────────────
+model Integration {
+  id          String          @id @default(uuid())
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id])
+  type        IntegrationType
+  provider    String          // e.g. "smtp", "sendgrid", "twilio"
+  config      Json            // provider-specific config
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+// ─── Contacts & Conversations ────────────────────────────
+model Contact {
+  id              String   @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  name            String
+  email           String?
+  phone           String?
+  source          String   @default("contact_form") // contact_form | booking
+  conversations   Conversation[]
+  bookings        Booking[]
+  formSubmissions FormSubmission[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Conversation {
+  id               String   @id @default(uuid())
+  workspaceId      String
+  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+  contactId        String
+  contact          Contact  @relation(fields: [contactId], references: [id])
+  status           String   @default("open") // open | closed
+  automationPaused Boolean  @default(false)
+  messages         Message[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Message {
+  id             String           @id @default(uuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  direction      MessageDirection
+  channel        MessageChannel
+  content        String
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+}
+
+// ─── Bookings ────────────────────────────────────────────
+model ServiceType {
+  id            String   @id @default(uuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id])
+  name          String
+  description   String?
+  duration      Int      // minutes
+  location      String?
+  availability  Availability[]
+  bookings      Booking[]
+  formTemplates FormTemplate[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Availability {
+  id            String      @id @default(uuid())
+  serviceTypeId String
+  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id])
+  dayOfWeek     Int         // 0=Sunday, 6=Saturday
+  startTime     String      // "09:00"
+  endTime       String      // "17:00"
+}
+
+model Booking {
+  id              String        @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id])
+  contactId       String
+  contact         Contact       @relation(fields: [contactId], references: [id])
+  serviceTypeId   String
+  serviceType     ServiceType   @relation(fields: [serviceTypeId], references: [id])
+  dateTime        DateTime
+  endTime         DateTime
+  status          BookingStatus @default(CONFIRMED)
+  notes           String?
+  formSubmissions FormSubmission[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+// ─── Forms ───────────────────────────────────────────────
+model FormTemplate {
+  id                  String   @id @default(uuid())
+  workspaceId         String
+  workspace           Workspace @relation(fields: [workspaceId], references: [id])
+  name                String
+  fields              Json     // array of field definitions
+  linkedServiceTypeId String?
+  linkedServiceType   ServiceType? @relation(fields: [linkedServiceTypeId], references: [id])
+  submissions         FormSubmission[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model FormSubmission {
+  id             String               @id @default(uuid())
+  formTemplateId String
+  formTemplate   FormTemplate         @relation(fields: [formTemplateId], references: [id])
+  bookingId      String?
+  booking        Booking?             @relation(fields: [bookingId], references: [id])
+  contactId      String
+  contact        Contact              @relation(fields: [contactId], references: [id])
+  status         FormSubmissionStatus @default(PENDING)
+  data           Json?
+  dueDate        DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+}
+
+// ─── Inventory ───────────────────────────────────────────
+model InventoryItem {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  name        String
+  quantity    Int       @default(0)
+  threshold   Int       @default(5)
+  unit        String    @default("units")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── Staff Permissions ───────────────────────────────────
+model StaffPermission {
+  id        String  @id @default(uuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id])
+  inbox     Boolean @default(true)
+  bookings  Boolean @default(true)
+  forms     Boolean @default(true)
+  inventory Boolean @default(false)
+}
+
+// ─── Automation & Alerts ─────────────────────────────────
+model AutomationLog {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  event       String
+  action      String
+  contactId   String?
+  status      String    @default("success") // success | failed
+  details     String?
+  createdAt   DateTime  @default(now())
+}
+
+model Alert {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  type        AlertType
+  message     String
+  link        String?
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+// ─── Staff Invitations ───────────────────────────────
+model StaffInvitation {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  email       String
+  token       String    @unique
+  permissions Json      // { inbox, bookings, forms, inventory }
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// ─── Google Calendar Connection ──────────────────────
+model CalendarConnection {
+  id            String    @id @default(uuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id])
+  provider      String    @default("google")
+  accessToken   String?
+  refreshToken  String?
+  calendarId    String?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
