@@ -44,6 +44,16 @@ class AutomationService {
                 }
             }
 
+            // Create in-app alert for new contact message
+            await prisma.alert.create({
+                data: {
+                    workspaceId,
+                    type: 'MISSED_MESSAGE',
+                    message: `New message from ${contact.name}${contact.email ? ` (${contact.email})` : ''}`,
+                    link: '/inbox'
+                }
+            });
+
             await this.log(workspaceId, 'contact.created', 'send_welcome', contact.id);
             // Fire webhooks
             await webhookService.fire(workspaceId, 'contact.created', {
@@ -112,7 +122,7 @@ class AutomationService {
 
                 // Notify about forms
                 if (contact.email) {
-                    const formUrl = `${process.env.FRONTEND_URL}/forms/${submission.id}`;
+                    const formUrl = `${process.env.FRONTEND_URL}/public/${workspaceId}/form/${template.id}`;
                     await emailService.send(workspaceId, {
                         to: contact.email,
                         subject: `Please complete: ${template.name}`,
@@ -121,6 +131,17 @@ class AutomationService {
                     });
                 }
             }
+
+            // Create in-app alert for new booking
+            const dateStr2 = new Date(booking.dateTime).toLocaleString();
+            await prisma.alert.create({
+                data: {
+                    workspaceId,
+                    type: 'UNCONFIRMED_BOOKING',
+                    message: `New booking: ${contact.name} booked ${serviceType.name} for ${dateStr2}`,
+                    link: '/bookings'
+                }
+            });
 
             // Sync to Google Calendar
             const fullBooking = await prisma.booking.findUnique({

@@ -9,7 +9,8 @@
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio",
-    "db:generate": "npx prisma generate"
+    "db:generate": "npx prisma generate",
+    "test": "jest --forceExit --detectOpenHandles"
   },
   "keywords": [],
   "author": "",
@@ -25,12 +26,14 @@
     "googleapis": "^171.4.0",
     "groq-sdk": "^0.37.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
     "dotenv": "^17.2.4",
+    "jest": "^30.2.0",
     "prisma": "^5.22.0",
     "tsx": "^4.21.0"
   }

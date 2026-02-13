@@ -25,8 +25,8 @@ router.post('/', auth, ownerOnly, async (req, res, next) => {
             return res.status(400).json({ error: 'Type and provider are required' });
         }
 
-        if (!['EMAIL', 'SMS', 'WEBHOOK'].includes(type)) {
-            return res.status(400).json({ error: 'Type must be EMAIL, SMS, or WEBHOOK' });
+        if (!['EMAIL', 'SMS', 'WEBHOOK', 'CALENDAR', 'FILE_STORAGE'].includes(type)) {
+            return res.status(400).json({ error: 'Type must be EMAIL, SMS, CALENDAR, WEBHOOK, or FILE_STORAGE' });
         }
 
         const integration = await prisma.integration.create({

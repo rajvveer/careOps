@@ -108,7 +108,7 @@ cron.schedule('0 */6 * * *', async () => {
 
             // Send reminder
             if (submission.contact.email) {
-                const formUrl = `${process.env.FRONTEND_URL}/forms/${submission.id}`;
+                const formUrl = `${process.env.FRONTEND_URL}/public/${submission.formTemplate.workspaceId}/form/${submission.formTemplateId}`;
                 await emailService.send(submission.formTemplate.workspaceId, {
                     to: submission.contact.email,
                     subject: `Overdue: Please complete ${submission.formTemplate.name}`,

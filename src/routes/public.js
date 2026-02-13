@@ -384,13 +384,10 @@ router.get('/:workspaceId/form-template/:templateId', async (req, res, next) => 
             return res.status(404).json({ error: 'Business not found' });
         }
 
-        const template = await prisma.formTemplate.findUnique({
-            where: { id: templateId },
+        const template = await prisma.formTemplate.findFirst({
+            where: { id: templateId, workspaceId },
             select: { id: true, name: true, fields: true, googleFormUrl: true, linkedServiceType: { select: { name: true } } }
         });
-        if (!template || template.workspaceId === undefined) {
-            // Verify template belongs to workspace
-        }
         if (!template) {
             return res.status(404).json({ error: 'Form not found' });
         }

@@ -41,6 +41,7 @@ enum IntegrationType {
   SMS
   CALENDAR
   WEBHOOK
+  FILE_STORAGE
 }
 
 enum AlertType {

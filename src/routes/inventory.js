@@ -61,6 +61,12 @@ router.put('/:id', auth, checkPermission('inventory'), async (req, res, next) =>
     try {
         const { name, quantity, threshold, unit } = req.body;
 
+        // Verify item belongs to this workspace
+        const existing = await prisma.inventoryItem.findFirst({
+            where: { id: req.params.id, workspaceId: req.workspaceId }
+        });
+        if (!existing) return res.status(404).json({ error: 'Inventory item not found' });
+
         const item = await prisma.inventoryItem.update({
             where: { id: req.params.id },
             data: {
@@ -85,6 +91,11 @@ router.put('/:id', auth, checkPermission('inventory'), async (req, res, next) =>
 // DELETE /api/inventory/:id
 router.delete('/:id', auth, ownerOnly, async (req, res, next) => {
     try {
+        const existing = await prisma.inventoryItem.findFirst({
+            where: { id: req.params.id, workspaceId: req.workspaceId }
+        });
+        if (!existing) return res.status(404).json({ error: 'Inventory item not found' });
+
         await prisma.inventoryItem.delete({ where: { id: req.params.id } });
         res.json({ message: 'Inventory item deleted' });
     } catch (error) {

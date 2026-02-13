@@ -58,7 +58,7 @@ class SmsService {
             }
 
             // Fallback: In-app notification (always works, free)
-            console.log('📱 [IN-APP] SMS notification logged for:', to);
+            console.log('✉️ [IN-APP] Message notification logged for:', to);
             console.log('   Content:', body);
 
             // Create an in-app alert so staff can see it
@@ -66,7 +66,7 @@ class SmsService {
                 data: {
                     workspaceId,
                     type: 'SYSTEM',
-                    message: `📱 SMS to ${to}: ${body}`,
+                    message: `✉️ Message sent to ${to}: ${body}`,
                     link: '/inbox'
                 }
             });

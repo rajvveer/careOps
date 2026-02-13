@@ -60,6 +60,12 @@ router.post('/service-types', auth, ownerOnly, async (req, res, next) => {
 router.put('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
     try {
         const { name, description, duration, price, location } = req.body;
+        // Verify service type belongs to this workspace
+        const existing = await prisma.serviceType.findFirst({
+            where: { id: req.params.id, workspaceId: req.workspaceId }
+        });
+        if (!existing) return res.status(404).json({ error: 'Service type not found' });
+
         const serviceType = await prisma.serviceType.update({
             where: { id: req.params.id },
             data: {
@@ -80,6 +86,11 @@ router.put('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
 // DELETE /api/bookings/service-types/:id
 router.delete('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
     try {
+        const existing = await prisma.serviceType.findFirst({
+            where: { id: req.params.id, workspaceId: req.workspaceId }
+        });
+        if (!existing) return res.status(404).json({ error: 'Service type not found' });
+
         await prisma.serviceType.delete({ where: { id: req.params.id } });
         invalidateWorkspaceCache(req.workspaceId);
         res.json({ message: 'Service type deleted' });
@@ -184,7 +195,9 @@ router.delete('/availability/:id', auth, ownerOnly, async (req, res, next) => {
 router.get('/', auth, checkPermission('bookings'), async (req, res, next) => {
     try {
         const { status, date, page = 1, limit = 20 } = req.query;
-        const skip = (page - 1) * limit;
+        const pg = Number(page);
+        const lim = Number(limit);
+        const skip = (pg - 1) * lim;
 
         const where = { workspaceId: req.workspaceId };
         if (status) where.status = status;
@@ -210,7 +223,7 @@ router.get('/', auth, checkPermission('bookings'), async (req, res, next) => {
             prisma.booking.count({ where })
         ]);
 
-        res.json({ bookings, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+        res.json({ bookings, total, page: pg, totalPages: Math.ceil(total / lim) });
     } catch (error) {
         next(error);
     }

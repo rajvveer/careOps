@@ -9,7 +9,9 @@ const automation = require('../services/automation');
 router.get('/', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const { status, search, page = 1, limit = 20 } = req.query;
-        const skip = (page - 1) * limit;
+        const pg = Number(page);
+        const lim = Number(limit);
+        const skip = (pg - 1) * lim;
 
         const where = { workspaceId: req.workspaceId };
         if (status) where.status = status;
@@ -39,8 +41,8 @@ router.get('/', auth, checkPermission('inbox'), async (req, res, next) => {
             conversations,
             total,
             unanswered,
-            page: Number(page),
-            totalPages: Math.ceil(total / limit)
+            page: pg,
+            totalPages: Math.ceil(total / lim)
         });
     } catch (error) {
         next(error);
@@ -131,11 +133,15 @@ router.post('/:conversationId/reply', auth, checkPermission('inbox'), async (req
 router.patch('/:conversationId/status', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const { status } = req.body;
-        const conversation = await prisma.conversation.update({
-            where: { id: req.params.conversationId },
+        const conversation = await prisma.conversation.updateMany({
+            where: { id: req.params.conversationId, workspaceId: req.workspaceId },
             data: { status }
         });
-        res.json(conversation);
+        if (conversation.count === 0) {
+            return res.status(404).json({ error: 'Conversation not found' });
+        }
+        const updated = await prisma.conversation.findUnique({ where: { id: req.params.conversationId } });
+        res.json(updated);
     } catch (error) {
         next(error);
     }

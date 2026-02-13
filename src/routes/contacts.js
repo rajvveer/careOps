@@ -9,7 +9,9 @@ const { invalidateWorkspaceCache } = require('./dashboard');
 router.get('/', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const { search, source, page = 1, limit = 20 } = req.query;
-        const skip = (page - 1) * limit;
+        const pg = Number(page);
+        const lim = Number(limit);
+        const skip = (pg - 1) * lim;
 
         const where = { workspaceId: req.workspaceId };
         if (search) {
@@ -34,7 +36,7 @@ router.get('/', auth, checkPermission('inbox'), async (req, res, next) => {
             prisma.contact.count({ where })
         ]);
 
-        res.json({ contacts, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+        res.json({ contacts, total, page: pg, totalPages: Math.ceil(total / lim) });
     } catch (error) {
         next(error);
     }

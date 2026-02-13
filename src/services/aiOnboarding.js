@@ -84,32 +84,44 @@ class AiOnboardingService {
                 if (userSelections.action) selectionContext += `\nUser just: ${userSelections.action}`;
             }
 
-            const prompt = `You are Cara, a warm, witty, enthusiastic AI assistant helping a business owner set up their workspace on CareOps.
+            const stepPersonality = {
+                1: 'This is the very first step — set a confident, welcoming tone. Comment on their business name if provided.',
+                2: 'Talk about how communication channels unlock their business. Be brief and practical.',
+                3: 'Get them excited about their public-facing contact page and how clients will find them.',
+                4: 'Help them feel confident about their service setup. Focus ONLY on the service being created. Do NOT mention intake forms, forms, or any later steps.',
+                5: 'Explain why intake forms save time. Make it feel easy and automated.',
+                6: 'Inventory can feel tedious — make it feel quick and worthwhile. Emphasize the alert system.',
+                7: 'Team step — be casual. Acknowledge they might not need this yet.',
+                8: 'This is the finish line! Be celebratory but genuine, not over the top.'
+            };
 
-Generate a short, natural voice script for step ${step} of 8. Talk like a real person — like a fun friend who happens to be a business expert.
+            const prompt = `You are Cara, a friendly AI setup assistant for CareOps — a business operations platform.
+
+Generate a SHORT voice script for onboarding step ${step} of 8.
 
 Business: ${businessName || 'their business'}
 Step: "${stepInfo.title}" — ${stepInfo.description}
-${selectionContext ? `\n## What the user has done/selected:\n${selectionContext}` : ''}
+${selectionContext ? `\n## User's current selections:\n${selectionContext}` : ''}
+
+Personality for this step: ${stepPersonality[step] || 'Be helpful and encouraging.'}
 
 Rules:
-- Sound like a real, excited person — NOT a corporate robot
-- REACT specifically to what the user selected/did (if any selections provided)
-- Use contractions (you'll, we're, let's, that's)
-- Add personality — use phrases like "nice pick!", "love that!", "ooh great choice", "you're crushing it"
-- If they picked something, comment on WHY it's a good choice or give a quick pro tip about it
-- Keep sentences short with natural pauses
-- Be encouraging and make them feel like they're doing great
-- Max 80 words
-- NO markdown, emojis, or formatting
-- Just pure spoken text that sounds great when read aloud
-- Vary your language — never start with "Alright" or "Great" twice in a row`;
+- Talk naturally, like a knowledgeable friend walking them through setup
+- Use contractions (you'll, we're, let's, that's, it's)
+- Keep it conversational — short sentences, natural pauses
+- If they selected something, acknowledge it specifically and give a UNIQUE insight (not just "nice pick")
+- DO NOT use filler phrases like "nice pick", "you're crushing it", "love that", "great choice", "ooh" — be original
+- Every response must feel different from the last one. Vary your opening, structure, and closing
+- CRITICAL: NEVER mention steps the user hasn't reached yet. On step 4, do NOT mention intake forms, forms, inventory, or any later topics. Only talk about the CURRENT step.
+- Max 70 words
+- NO markdown, emojis, or formatting — just spoken text
+- End with a clear call to action for what to do next on this step`;
 
             const completion = await this.groq.chat.completions.create({
                 messages: [{ role: 'user', content: prompt }],
                 model: 'llama-3.3-70b-versatile',
-                temperature: 0.9,
-                max_tokens: 200,
+                temperature: 0.85,
+                max_tokens: 180,
             });
 
             const text = completion.choices[0]?.message?.content || '';
@@ -135,32 +147,26 @@ Rules:
         }
 
         try {
-            const prompt = `You are Cara, a fun and witty AI assistant. The user just made a selection during onboarding setup.
+            const prompt = `You are Cara, a setup assistant for CareOps. The user just made a selection during onboarding.
 
 Business: ${businessName || 'their business'}
 Step ${step}: ${this.getStepInfo(step).title}
-They just selected: ${selectionType} = "${selectionValue}"
+They selected: ${selectionType} = "${selectionValue}"
 
-Give a SHORT, fun, enthusiastic 1-2 sentence reaction to their specific choice. Be specific about what they chose — don't be generic!
-
-Examples of good reactions:
-- For "Consultation" service: "Ooh, consultation! That's a high-value service. Clients are gonna love the professional booking flow."
-- For "30 min" duration: "Thirty minutes is the sweet spot — long enough to be thorough, short enough to pack your schedule!"
-- For "$50" price: "Fifty bucks, nice! That's competitive. You can always adjust later as you grow."
-- For "Online" location: "Virtual sessions — smart move! No commute for anyone."
+Give a 1-sentence reaction to their specific choice. Be specific about what they chose.
 
 Rules:
-- Max 25 words
-- Sound excited and genuine
-- NO markdown or emojis
-- Reference the SPECIFIC value they chose
-- Be witty, not cheesy`;
+- Max 20 words
+- Be genuine and conversational, not cheesy
+- DO NOT start with "Ooh", "Nice pick", "Love that", "Great choice", or "Solid" — be original
+- Reference the SPECIFIC value they chose and say something insightful about it
+- NO markdown, emojis, or quotes`;
 
             const completion = await this.groq.chat.completions.create({
                 messages: [{ role: 'user', content: prompt }],
                 model: 'llama-3.3-70b-versatile',
-                temperature: 1.0,
-                max_tokens: 60,
+                temperature: 0.9,
+                max_tokens: 50,
             });
 
             return {
@@ -174,15 +180,35 @@ Rules:
 
     getDefaultReaction(selectionType, selectionValue) {
         const reactions = {
-            serviceName: `Nice pick! "${selectionValue}" is a solid service to start with.`,
-            duration: `${selectionValue} minutes — that's a great session length!`,
-            price: selectionValue === '0' || selectionValue === 0 ? `Free sessions are perfect for getting started!` : `$${selectionValue} — competitive and fair. Love it!`,
-            location: `${selectionValue} — great choice for your clients!`,
-            formName: `${selectionValue} — exactly what your clients need before their appointment!`,
-            inventoryItem: `${selectionValue} — smart to start tracking that early!`,
+            serviceName: [
+                `"${selectionValue}" — that'll look professional on your booking page.`,
+                `${selectionValue} is a strong starting service. You can always add more later.`,
+                `Going with ${selectionValue} — your clients will appreciate the clear naming.`,
+            ],
+            duration: [
+                `${selectionValue} works well for most clients. Easy to adjust later if needed.`,
+                `${selectionValue} sessions give you a good rhythm for your day.`,
+            ],
+            price: (selectionValue === '0' || selectionValue === 0)
+                ? [`Free consultations are a smart way to build trust with new clients.`]
+                : [`$${selectionValue} is a fair starting point. You can always adjust based on demand.`],
+            location: [
+                `${selectionValue} — that keeps things flexible for both sides.`,
+                `${selectionValue} sessions tend to work well for client satisfaction.`,
+            ],
+            formName: [
+                `A ${selectionValue} will streamline your client intake process.`,
+                `${selectionValue} — clients appreciate having everything organized upfront.`,
+            ],
+            inventoryItem: [
+                `Tracking ${selectionValue} early means you won't run out unexpectedly.`,
+                `${selectionValue} — good to stay ahead on supply levels.`,
+            ],
         };
+        const options = reactions[selectionType] || [`Good selection — let's keep going.`];
+        const pick = options[Math.floor(Math.random() * options.length)];
         return {
-            reaction: reactions[selectionType] || `Great choice!`,
+            reaction: pick,
             aiGenerated: false
         };
     }

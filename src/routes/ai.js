@@ -118,7 +118,7 @@ router.post('/inventory-suggestions', auth, async (req, res, next) => {
 Business name: "${businessName}"
 Services offered: ${serviceNames}
 
-Generate exactly 10 common inventory/supply items that this specific type of business would need to track. Be specific to the business type.
+Generate exactly 10 inventory/supply items that this SPECIFIC type of business would need to track. The items MUST be directly related to the services offered, NOT generic office supplies.
 
 Rules:
 - Return ONLY a JSON array of strings, nothing else

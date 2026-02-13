@@ -404,4 +404,29 @@ router.get('/export/:type', auth, async (req, res, next) => {
     } catch (error) { next(error); }
 });
 
+// GET /api/dashboard/activity — Activity log / audit trail
+router.get('/activity', auth, async (req, res, next) => {
+    try {
+        const workspaceId = req.workspaceId;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        const [logs, total] = await Promise.all([
+            prisma.automationLog.findMany({
+                where: { workspaceId },
+                orderBy: { executedAt: 'desc' },
+                skip,
+                take: limit
+            }),
+            prisma.automationLog.count({ where: { workspaceId } })
+        ]);
+
+        res.json({
+            logs,
+            pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+        });
+    } catch (error) { next(error); }
+});
+
 module.exports = { router, invalidateWorkspaceCache };

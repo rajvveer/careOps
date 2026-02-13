@@ -26,6 +26,7 @@ app.use('/api/dashboard', require('./src/routes/dashboard').router);
 app.use('/api/public', require('./src/routes/public'));
 app.use('/api/ai', require('./src/routes/ai'));
 app.use('/api/calendar', require('./src/routes/calendar'));
+app.use('/api/files', require('./src/routes/files'));
 
 // Health check
 app.get('/api/health', (req, res) => {
