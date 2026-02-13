@@ -16,6 +16,12 @@ function setCache(key, data) {
     cache.set(key, { data, ts: Date.now() });
 }
 
+// Invalidate all caches for a workspace (called from other routes on mutations)
+function invalidateWorkspaceCache(workspaceId) {
+    cache.delete(`dash:${workspaceId}`);
+    cache.delete(`analytics:${workspaceId}`);
+}
+
 // GET /api/dashboard — OPTIMIZED: 4 bulk queries + in-memory counting
 router.get('/', auth, async (req, res, next) => {
     try {
@@ -31,9 +37,9 @@ router.get('/', auth, async (req, res, next) => {
 
         // 4 bulk queries instead of 14 individual ones
         const [allBookings, allConversations, allFormSubmissions, allInventory, alerts, unreadAlerts] = await Promise.all([
-            // 1. All relevant bookings (today + upcoming week + completed/no-show)
+            // 1. Bookings from last 30 days (covers today + upcoming + historical counts)
             prisma.booking.findMany({
-                where: { workspaceId },
+                where: { workspaceId, dateTime: { gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) } },
                 include: { contact: true, serviceType: true },
                 orderBy: { dateTime: 'asc' }
             }),
@@ -110,7 +116,7 @@ router.patch('/alerts/:id/read', auth, async (req, res, next) => {
     try {
         const alert = await prisma.alert.update({ where: { id: req.params.id }, data: { isRead: true } });
         // Invalidate dashboard cache for this workspace
-        cache.delete(`dash:${req.workspaceId}`);
+        invalidateWorkspaceCache(req.workspaceId);
         res.json(alert);
     } catch (error) { next(error); }
 });
@@ -119,7 +125,7 @@ router.patch('/alerts/:id/read', auth, async (req, res, next) => {
 router.patch('/alerts/read-all', auth, async (req, res, next) => {
     try {
         await prisma.alert.updateMany({ where: { workspaceId: req.workspaceId, isRead: false }, data: { isRead: true } });
-        cache.delete(`dash:${req.workspaceId}`);
+        invalidateWorkspaceCache(req.workspaceId);
         res.json({ message: 'All alerts marked as read' });
     } catch (error) { next(error); }
 });
@@ -136,26 +142,29 @@ router.get('/analytics', auth, async (req, res, next) => {
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-        const [allBookings, allContacts, serviceTypes, allForms, inventory, conversations] = await Promise.all([
+        const [allBookings, allContacts, serviceTypes, formCount, inventory, conversations] = await Promise.all([
             prisma.booking.findMany({
                 where: { workspaceId, dateTime: { gte: thirtyDaysAgo } },
-                include: { serviceType: true },
+                select: { dateTime: true, status: true, serviceTypeId: true },
                 orderBy: { dateTime: 'asc' }
             }),
-            prisma.contact.findMany({
-                where: { workspaceId, createdAt: { gte: thirtyDaysAgo } },
-                orderBy: { createdAt: 'asc' }
+            prisma.contact.count({
+                where: { workspaceId, createdAt: { gte: thirtyDaysAgo } }
             }),
             prisma.serviceType.findMany({
                 where: { workspaceId },
                 include: { _count: { select: { bookings: true } } }
             }),
-            prisma.formSubmission.findMany({
+            prisma.formSubmission.count({
                 where: { formTemplate: { workspaceId }, createdAt: { gte: thirtyDaysAgo } }
             }),
             prisma.inventoryItem.findMany({ where: { workspaceId } }),
             prisma.conversation.count({ where: { workspaceId, createdAt: { gte: thirtyDaysAgo } } })
         ]);
+
+        // Build a price lookup from serviceTypes
+        const priceMap = {};
+        serviceTypes.forEach(st => { priceMap[st.id] = Number(st.price || 0); });
 
         // Bookings by day (last 30 days)
         const bookingsByDay = {};
@@ -169,7 +178,7 @@ router.get('/analytics', auth, async (req, res, next) => {
         allBookings.forEach(b => {
             const key = new Date(b.dateTime).toISOString().slice(0, 10);
             if (bookingsByDay[key] !== undefined) bookingsByDay[key]++;
-            if (revByDay[key] !== undefined) revByDay[key] += Number(b.serviceType?.price || 0);
+            if (revByDay[key] !== undefined) revByDay[key] += priceMap[b.serviceTypeId] || 0;
         });
 
         // Bookings by day-of-week
@@ -195,9 +204,9 @@ router.get('/analytics', auth, async (req, res, next) => {
         }).length;
         const growthPct = lastWeekBookings > 0 ? Math.round(((thisWeekBookings - lastWeekBookings) / lastWeekBookings) * 100) : thisWeekBookings > 0 ? 100 : 0;
 
-        const totalRevenue = allBookings.reduce((s, b) => s + Number(b.serviceType?.price || 0), 0);
+        const totalRevenue = allBookings.reduce((s, b) => s + (priceMap[b.serviceTypeId] || 0), 0);
         const thisWeekRevenue = allBookings.filter(b => new Date(b.dateTime) >= sevenDaysAgo)
-            .reduce((s, b) => s + Number(b.serviceType?.price || 0), 0);
+            .reduce((s, b) => s + (priceMap[b.serviceTypeId] || 0), 0);
 
         const result = {
             bookingsByDay: Object.entries(bookingsByDay).map(([date, count]) => ({ date, count })),
@@ -211,9 +220,9 @@ router.get('/analytics', auth, async (req, res, next) => {
                 thisWeekBookings,
                 thisWeekRevenue,
                 growthPct,
-                newContacts: allContacts.length,
+                newContacts: allContacts,
                 newConversations: conversations,
-                totalForms: allForms.length,
+                totalForms: formCount,
                 inventoryItems: inventory.length,
                 lowStock: inventory.filter(i => i.quantity <= i.threshold).length
             }
@@ -395,4 +404,4 @@ router.get('/export/:type', auth, async (req, res, next) => {
     } catch (error) { next(error); }
 });
 
-module.exports = router;
+module.exports = { router, invalidateWorkspaceCache };

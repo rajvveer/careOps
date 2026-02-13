@@ -123,6 +123,7 @@ model Contact {
   updatedAt       DateTime @updatedAt
 
   @@index([workspaceId])
+  @@index([workspaceId, createdAt])
 }
 
 model Conversation {
@@ -140,6 +141,7 @@ model Conversation {
   @@index([workspaceId])
   @@index([contactId])
   @@index([workspaceId, updatedAt])
+  @@index([workspaceId, status])
 }
 
 model Message {

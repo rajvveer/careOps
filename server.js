@@ -22,7 +22,7 @@ app.use('/api/bookings', require('./src/routes/bookings'));
 app.use('/api/forms', require('./src/routes/forms'));
 app.use('/api/inventory', require('./src/routes/inventory'));
 app.use('/api/staff', require('./src/routes/staff'));
-app.use('/api/dashboard', require('./src/routes/dashboard'));
+app.use('/api/dashboard', require('./src/routes/dashboard').router);
 app.use('/api/public', require('./src/routes/public'));
 app.use('/api/ai', require('./src/routes/ai'));
 app.use('/api/calendar', require('./src/routes/calendar'));
