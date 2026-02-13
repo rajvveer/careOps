@@ -3,6 +3,7 @@ const router = express.Router();
 const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { checkPermission } = require('../middleware/roleCheck');
+const { invalidateWorkspaceCache } = require('./dashboard');
 
 // GET /api/contacts
 router.get('/', auth, checkPermission('inbox'), async (req, res, next) => {
@@ -102,6 +103,7 @@ router.post('/', auth, checkPermission('inbox'), async (req, res, next) => {
         });
 
         res.status(201).json(contact);
+        invalidateWorkspaceCache(req.workspaceId);
     } catch (error) {
         next(error);
     }
@@ -120,6 +122,7 @@ router.put('/:id', auth, checkPermission('inbox'), async (req, res, next) => {
             }
         });
         res.json(contact);
+        invalidateWorkspaceCache(req.workspaceId);
     } catch (error) {
         next(error);
     }

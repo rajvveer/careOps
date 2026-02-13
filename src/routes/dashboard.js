@@ -153,7 +153,7 @@ router.get('/analytics', auth, async (req, res, next) => {
             }),
             prisma.serviceType.findMany({
                 where: { workspaceId },
-                include: { _count: { select: { bookings: true } } }
+                select: { id: true, name: true, price: true, _count: { select: { bookings: true } } }
             }),
             prisma.formSubmission.count({
                 where: { formTemplate: { workspaceId }, createdAt: { gte: thirtyDaysAgo } }

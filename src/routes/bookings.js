@@ -3,6 +3,7 @@ const router = express.Router();
 const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly, checkPermission } = require('../middleware/roleCheck');
+const { invalidateWorkspaceCache } = require('./dashboard');
 
 // ─── Service Types ─────────────────────────────────────
 
@@ -49,6 +50,7 @@ router.post('/service-types', auth, ownerOnly, async (req, res, next) => {
         });
 
         res.status(201).json(serviceType);
+        invalidateWorkspaceCache(req.workspaceId);
     } catch (error) {
         next(error);
     }
@@ -69,6 +71,7 @@ router.put('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
             }
         });
         res.json(serviceType);
+        invalidateWorkspaceCache(req.workspaceId);
     } catch (error) {
         next(error);
     }
@@ -78,6 +81,7 @@ router.put('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
 router.delete('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
     try {
         await prisma.serviceType.delete({ where: { id: req.params.id } });
+        invalidateWorkspaceCache(req.workspaceId);
         res.json({ message: 'Service type deleted' });
     } catch (error) {
         next(error);
@@ -250,6 +254,7 @@ router.patch('/:id/status', auth, checkPermission('bookings'), async (req, res, 
         });
 
         res.json(booking);
+        invalidateWorkspaceCache(req.workspaceId);
     } catch (error) {
         next(error);
     }
