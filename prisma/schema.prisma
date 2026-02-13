@@ -139,6 +139,7 @@ model Conversation {
 
   @@index([workspaceId])
   @@index([contactId])
+  @@index([workspaceId, updatedAt])
 }
 
 model Message {
@@ -152,6 +153,7 @@ model Message {
   createdAt      DateTime         @default(now())
 
   @@index([conversationId])
+  @@index([conversationId, createdAt])
 }
 
 // ─── Bookings ────────────────────────────────────────────
@@ -204,6 +206,7 @@ model Booking {
   @@index([contactId])
   @@index([serviceTypeId])
   @@index([dateTime])
+  @@index([workspaceId, status, dateTime])
 }
 
 // ─── Forms ───────────────────────────────────────────────
@@ -240,6 +243,7 @@ model FormSubmission {
   @@index([formTemplateId])
   @@index([contactId])
   @@index([bookingId])
+  @@index([formTemplateId, status])
 }
 
 // ─── Inventory ───────────────────────────────────────────
@@ -295,6 +299,7 @@ model Alert {
 
   @@index([workspaceId])
   @@index([isRead])
+  @@index([workspaceId, isRead, createdAt])
 }
 
 // ─── Staff Invitations ───────────────────────────────

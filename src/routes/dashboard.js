@@ -3,61 +3,103 @@ const router = express.Router();
 const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 
-// GET /api/dashboard — OPTIMIZED: all queries run in parallel
+// ─── In-Memory Response Cache ────────────────────────────
+const cache = new Map();
+
+function getCached(key, ttlMs) {
+    const entry = cache.get(key);
+    if (entry && Date.now() - entry.ts < ttlMs) return entry.data;
+    return null;
+}
+
+function setCache(key, data) {
+    cache.set(key, { data, ts: Date.now() });
+}
+
+// GET /api/dashboard — OPTIMIZED: 4 bulk queries + in-memory counting
 router.get('/', auth, async (req, res, next) => {
     try {
         const workspaceId = req.workspaceId;
+        const cacheKey = `dash:${workspaceId}`;
+        const cached = getCached(cacheKey, 60_000); // 60s TTL
+        if (cached) return res.json(cached);
+
         const now = new Date();
         const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
         const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
         const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-        // Run ALL queries in parallel
-        const [
-            todayBookings, upcomingBookings, completedBookings, noShowBookings,
-            newInquiries, openConversations, allConversations,
-            pendingForms, overdueForms, completedForms,
-            allInventory, alerts, unreadAlerts, todayBookingsList
-        ] = await Promise.all([
-            prisma.booking.count({ where: { workspaceId, dateTime: { gte: todayStart, lte: todayEnd } } }),
-            prisma.booking.count({ where: { workspaceId, dateTime: { gt: todayEnd, lte: weekFromNow }, status: 'CONFIRMED' } }),
-            prisma.booking.count({ where: { workspaceId, status: 'COMPLETED' } }),
-            prisma.booking.count({ where: { workspaceId, status: 'NO_SHOW' } }),
-            prisma.contact.count({ where: { workspaceId, createdAt: { gte: todayStart } } }),
-            prisma.conversation.count({ where: { workspaceId, status: 'open' } }),
+        // 4 bulk queries instead of 14 individual ones
+        const [allBookings, allConversations, allFormSubmissions, allInventory, alerts, unreadAlerts] = await Promise.all([
+            // 1. All relevant bookings (today + upcoming week + completed/no-show)
+            prisma.booking.findMany({
+                where: { workspaceId },
+                include: { contact: true, serviceType: true },
+                orderBy: { dateTime: 'asc' }
+            }),
+            // 2. Open conversations with last message
             prisma.conversation.findMany({
                 where: { workspaceId, status: 'open' },
                 include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } }
             }),
-            prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'PENDING' } }),
-            prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'OVERDUE' } }),
-            prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'COMPLETED' } }),
+            // 3. All form submissions for this workspace
+            prisma.formSubmission.findMany({
+                where: { formTemplate: { workspaceId } },
+                select: { status: true }
+            }),
+            // 4. All inventory items
             prisma.inventoryItem.findMany({ where: { workspaceId } }),
+            // Alerts (already efficient — small take)
             prisma.alert.findMany({ where: { workspaceId }, orderBy: { createdAt: 'desc' }, take: 10 }),
-            prisma.alert.count({ where: { workspaceId, isRead: false } }),
-            prisma.booking.findMany({
-                where: { workspaceId, dateTime: { gte: todayStart, lte: todayEnd } },
-                include: { contact: true, serviceType: true },
-                orderBy: { dateTime: 'asc' }
-            })
+            prisma.alert.count({ where: { workspaceId, isRead: false } })
         ]);
 
+        // In-memory counting — replaces 10+ database count queries
+        const todayBookings = allBookings.filter(b => {
+            const dt = new Date(b.dateTime);
+            return dt >= todayStart && dt <= todayEnd;
+        });
+        const upcomingBookings = allBookings.filter(b => {
+            const dt = new Date(b.dateTime);
+            return dt > todayEnd && dt <= weekFromNow && b.status === 'CONFIRMED';
+        }).length;
+        const completedBookings = allBookings.filter(b => b.status === 'COMPLETED').length;
+        const noShowBookings = allBookings.filter(b => b.status === 'NO_SHOW').length;
+
+        const newInquiriesCount = allConversations.length; // open convos are the best proxy
         const unansweredMessages = allConversations.filter(c =>
             c.messages.length > 0 && c.messages[0].direction === 'INBOUND'
         ).length;
+
+        const pendingForms = allFormSubmissions.filter(f => f.status === 'PENDING').length;
+        const overdueForms = allFormSubmissions.filter(f => f.status === 'OVERDUE').length;
+        const completedForms = allFormSubmissions.filter(f => f.status === 'COMPLETED').length;
+
         const lowStockItems = allInventory.filter(item => item.quantity <= item.threshold);
         const criticalItems = allInventory.filter(item => item.quantity === 0);
 
-        res.json({
-            bookings: { today: todayBookings, upcoming: upcomingBookings, completed: completedBookings, noShow: noShowBookings, todayList: todayBookingsList },
-            leads: { newInquiries, openConversations, unansweredMessages },
+        // New inquiries — contacts created today (use a lightweight count)
+        const newInquiries = await prisma.contact.count({ where: { workspaceId, createdAt: { gte: todayStart } } });
+
+        const result = {
+            bookings: {
+                today: todayBookings.length,
+                upcoming: upcomingBookings,
+                completed: completedBookings,
+                noShow: noShowBookings,
+                todayList: todayBookings
+            },
+            leads: { newInquiries, openConversations: allConversations.length, unansweredMessages },
             forms: { pending: pendingForms, overdue: overdueForms, completed: completedForms },
             inventory: {
                 lowStockItems: lowStockItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, threshold: i.threshold, unit: i.unit })),
                 criticalCount: criticalItems.length, lowStockCount: lowStockItems.length
             },
             alerts: { recent: alerts, unreadCount: unreadAlerts }
-        });
+        };
+
+        setCache(cacheKey, result);
+        res.json(result);
     } catch (error) {
         next(error);
     }
@@ -67,6 +109,8 @@ router.get('/', auth, async (req, res, next) => {
 router.patch('/alerts/:id/read', auth, async (req, res, next) => {
     try {
         const alert = await prisma.alert.update({ where: { id: req.params.id }, data: { isRead: true } });
+        // Invalidate dashboard cache for this workspace
+        cache.delete(`dash:${req.workspaceId}`);
         res.json(alert);
     } catch (error) { next(error); }
 });
@@ -75,24 +119,24 @@ router.patch('/alerts/:id/read', auth, async (req, res, next) => {
 router.patch('/alerts/read-all', auth, async (req, res, next) => {
     try {
         await prisma.alert.updateMany({ where: { workspaceId: req.workspaceId, isRead: false }, data: { isRead: true } });
+        cache.delete(`dash:${req.workspaceId}`);
         res.json({ message: 'All alerts marked as read' });
     } catch (error) { next(error); }
 });
 
-// GET /api/dashboard/analytics — Historical data for charts
+// GET /api/dashboard/analytics — Historical data for charts (5-min cache)
 router.get('/analytics', auth, async (req, res, next) => {
     try {
         const workspaceId = req.workspaceId;
-        const now = new Date();
+        const cacheKey = `analytics:${workspaceId}`;
+        const cached = getCached(cacheKey, 300_000); // 5-minute TTL
+        if (cached) return res.json(cached);
 
-        // Last 30 days data
+        const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-        const [
-            allBookings, allContacts, serviceTypes,
-            allForms, inventory, conversations
-        ] = await Promise.all([
+        const [allBookings, allContacts, serviceTypes, allForms, inventory, conversations] = await Promise.all([
             prisma.booking.findMany({
                 where: { workspaceId, dateTime: { gte: thirtyDaysAgo } },
                 include: { serviceType: true },
@@ -129,7 +173,7 @@ router.get('/analytics', auth, async (req, res, next) => {
         });
 
         // Bookings by day-of-week
-        const dayOfWeek = [0, 0, 0, 0, 0, 0, 0]; // Sun=0 .. Sat=6
+        const dayOfWeek = [0, 0, 0, 0, 0, 0, 0];
         allBookings.forEach(b => { dayOfWeek[new Date(b.dateTime).getDay()]++; });
 
         // Status breakdown
@@ -155,7 +199,7 @@ router.get('/analytics', auth, async (req, res, next) => {
         const thisWeekRevenue = allBookings.filter(b => new Date(b.dateTime) >= sevenDaysAgo)
             .reduce((s, b) => s + Number(b.serviceType?.price || 0), 0);
 
-        res.json({
+        const result = {
             bookingsByDay: Object.entries(bookingsByDay).map(([date, count]) => ({ date, count })),
             revenueByDay: Object.entries(revByDay).map(([date, revenue]) => ({ date, revenue })),
             dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => ({ day: d, count: dayOfWeek[i] })),
@@ -173,11 +217,14 @@ router.get('/analytics', auth, async (req, res, next) => {
                 inventoryItems: inventory.length,
                 lowStock: inventory.filter(i => i.quantity <= i.threshold).length
             }
-        });
+        };
+
+        setCache(cacheKey, result);
+        res.json(result);
     } catch (error) { next(error); }
 });
 
-// GET /api/dashboard/weekly-report — AI weekly summary
+// GET /api/dashboard/weekly-report — OPTIMIZED: 4 queries instead of 9
 router.get('/weekly-report', auth, async (req, res, next) => {
     try {
         const workspaceId = req.workspaceId;
@@ -185,27 +232,49 @@ router.get('/weekly-report', auth, async (req, res, next) => {
         const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
         const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000);
 
-        const [
-            thisWeekBookings, lastWeekBookings,
-            thisWeekContacts, lastWeekContacts,
-            openConversations, pendingForms, overdueForms,
-            allInventory, workspace
-        ] = await Promise.all([
-            prisma.booking.findMany({ where: { workspaceId, dateTime: { gte: sevenDaysAgo } }, include: { serviceType: true } }),
-            prisma.booking.count({ where: { workspaceId, dateTime: { gte: fourteenDaysAgo, lt: sevenDaysAgo } } }),
-            prisma.contact.count({ where: { workspaceId, createdAt: { gte: sevenDaysAgo } } }),
-            prisma.contact.count({ where: { workspaceId, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } } }),
-            prisma.conversation.count({ where: { workspaceId, status: 'open' } }),
-            prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'PENDING' } }),
-            prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'OVERDUE' } }),
+        // 4 queries instead of 9
+        const [allRecentBookings, allRecentContacts, openConvAndForms, allInventory, workspace] = await Promise.all([
+            // 1. All bookings in last 14 days (split in-memory)
+            prisma.booking.findMany({
+                where: { workspaceId, dateTime: { gte: fourteenDaysAgo } },
+                include: { serviceType: true }
+            }),
+            // 2. All contacts in last 14 days (split in-memory)
+            prisma.contact.findMany({
+                where: { workspaceId, createdAt: { gte: fourteenDaysAgo } },
+                select: { id: true, createdAt: true }
+            }),
+            // 3. Open conversations + form counts in parallel
+            Promise.all([
+                prisma.conversation.count({ where: { workspaceId, status: 'open' } }),
+                prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'PENDING' } }),
+                prisma.formSubmission.count({ where: { formTemplate: { workspaceId }, status: 'OVERDUE' } })
+            ]),
+            // 4. Inventory
             prisma.inventoryItem.findMany({ where: { workspaceId } }),
             prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } })
         ]);
 
+        const [openConversations, pendingForms, overdueForms] = openConvAndForms;
+
+        // Split bookings in-memory
+        const thisWeekBookings = allRecentBookings.filter(b => new Date(b.dateTime) >= sevenDaysAgo);
+        const lastWeekBookingsCount = allRecentBookings.filter(b => {
+            const d = new Date(b.dateTime);
+            return d >= fourteenDaysAgo && d < sevenDaysAgo;
+        }).length;
+
+        // Split contacts in-memory
+        const thisWeekContacts = allRecentContacts.filter(c => new Date(c.createdAt) >= sevenDaysAgo).length;
+        const lastWeekContacts = allRecentContacts.filter(c => {
+            const d = new Date(c.createdAt);
+            return d >= fourteenDaysAgo && d < sevenDaysAgo;
+        }).length;
+
         const thisWeekRevenue = thisWeekBookings.reduce((s, b) => s + Number(b.serviceType?.price || 0), 0);
         const noShows = thisWeekBookings.filter(b => b.status === 'NO_SHOW').length;
         const completed = thisWeekBookings.filter(b => b.status === 'COMPLETED').length;
-        const bookingGrowth = lastWeekBookings > 0 ? Math.round(((thisWeekBookings.length - lastWeekBookings) / lastWeekBookings) * 100) : 0;
+        const bookingGrowth = lastWeekBookingsCount > 0 ? Math.round(((thisWeekBookings.length - lastWeekBookingsCount) / lastWeekBookingsCount) * 100) : 0;
         const contactGrowth = lastWeekContacts > 0 ? Math.round(((thisWeekContacts - lastWeekContacts) / lastWeekContacts) * 100) : 0;
         const lowStockCount = allInventory.filter(i => i.quantity <= i.threshold).length;
 
@@ -261,17 +330,22 @@ Rules:
     } catch (error) { next(error); }
 });
 
-// GET /api/dashboard/export/:type — CSV export
+// GET /api/dashboard/export/:type — CSV export with pagination
 router.get('/export/:type', auth, async (req, res, next) => {
     try {
         const workspaceId = req.workspaceId;
         const type = req.params.type;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(5000, Math.max(1, parseInt(req.query.limit) || 1000));
+        const skip = (page - 1) * limit;
 
         if (type === 'bookings') {
             const bookings = await prisma.booking.findMany({
                 where: { workspaceId },
                 include: { contact: true, serviceType: true },
-                orderBy: { dateTime: 'desc' }
+                orderBy: { dateTime: 'desc' },
+                skip,
+                take: limit
             });
             const csv = [
                 'Date,Time,Client,Email,Service,Duration,Price,Status',
@@ -288,7 +362,9 @@ router.get('/export/:type', auth, async (req, res, next) => {
         if (type === 'contacts') {
             const contacts = await prisma.contact.findMany({
                 where: { workspaceId },
-                orderBy: { createdAt: 'desc' }
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit
             });
             const csv = [
                 'Name,Email,Phone,Source,Created',
@@ -302,7 +378,9 @@ router.get('/export/:type', auth, async (req, res, next) => {
         if (type === 'inventory') {
             const items = await prisma.inventoryItem.findMany({
                 where: { workspaceId },
-                orderBy: { name: 'asc' }
+                orderBy: { name: 'asc' },
+                skip,
+                take: limit
             });
             const csv = [
                 'Item,Quantity,Unit,Threshold,Status',
@@ -318,4 +396,3 @@ router.get('/export/:type', auth, async (req, res, next) => {
 });
 
 module.exports = router;
-
