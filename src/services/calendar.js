@@ -1,6 +1,5 @@
 const { google } = require('googleapis');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 class CalendarService {
     getOAuth2Client() {

@@ -3,8 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly } = require('../middleware/roleCheck');
 const emailService = require('../services/email');
@@ -33,7 +32,7 @@ router.get('/', auth, ownerOnly, async (req, res, next) => {
 router.get('/invitations', auth, ownerOnly, async (req, res, next) => {
     try {
         const invitations = await prisma.staffInvitation.findMany({
-            where: { workspaceId: req.workspaceId },
+            where: { workspaceId: req.workspaceId, usedAt: null },
             orderBy: { createdAt: 'desc' }
         });
         res.json(invitations);

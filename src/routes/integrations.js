@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly } = require('../middleware/roleCheck');
 
@@ -26,8 +25,8 @@ router.post('/', auth, ownerOnly, async (req, res, next) => {
             return res.status(400).json({ error: 'Type and provider are required' });
         }
 
-        if (!['EMAIL', 'SMS'].includes(type)) {
-            return res.status(400).json({ error: 'Type must be EMAIL or SMS' });
+        if (!['EMAIL', 'SMS', 'WEBHOOK'].includes(type)) {
+            return res.status(400).json({ error: 'Type must be EMAIL, SMS, or WEBHOOK' });
         }
 
         const integration = await prisma.integration.create({

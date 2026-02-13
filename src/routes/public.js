@@ -1,10 +1,34 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const automation = require('../services/automation');
 
 // ─── Public Contact Form ───────────────────────────────
+
+// GET /api/public/:workspaceId/contact-form - Get contact form config
+router.get('/:workspaceId/contact-form', async (req, res, next) => {
+    try {
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: req.params.workspaceId },
+            select: { contactFormFields: true, name: true, isActive: true }
+        });
+        if (!workspace) {
+            return res.status(404).json({ error: 'Workspace not found' });
+        }
+        const defaultFields = [
+            { name: 'Name', type: 'text', required: true },
+            { name: 'Email', type: 'email', required: true },
+            { name: 'Phone', type: 'tel', required: false },
+            { name: 'Message', type: 'textarea', required: true }
+        ];
+        res.json({
+            businessName: workspace.name,
+            fields: workspace.contactFormFields || defaultFields
+        });
+    } catch (error) {
+        next(error);
+    }
+});
 
 // POST /api/public/:workspaceId/contact
 router.post('/:workspaceId/contact', async (req, res, next) => {
@@ -73,8 +97,8 @@ router.post('/:workspaceId/contact', async (req, res, next) => {
             });
         }
 
-        // Trigger automation
-        await automation.onContactCreated(workspaceId, contact);
+        // Trigger automation (fire-and-forget — don't block response)
+        automation.onContactCreated(workspaceId, contact).catch(err => console.error('Automation error:', err.message));
 
         res.status(201).json({
             message: 'Thank you for reaching out! We will get back to you shortly.',
@@ -274,8 +298,8 @@ router.post('/:workspaceId/book', async (req, res, next) => {
             }
         });
 
-        // Trigger automation (confirmation + forms)
-        await automation.onBookingCreated(workspaceId, booking, contact);
+        // Trigger automation (fire-and-forget — don't block response)
+        automation.onBookingCreated(workspaceId, booking, contact).catch(err => console.error('Automation error:', err.message));
 
         res.status(201).json({
             message: 'Booking confirmed! You will receive a confirmation shortly.',
@@ -346,4 +370,179 @@ router.post('/forms/:submissionId', async (req, res, next) => {
     }
 });
 
+// ─── Public Form Template Access (shareable links) ─────
+
+// GET /api/public/:workspaceId/form-template/:templateId
+router.get('/:workspaceId/form-template/:templateId', async (req, res, next) => {
+    try {
+        const { workspaceId, templateId } = req.params;
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: workspaceId },
+            select: { name: true, isActive: true }
+        });
+        if (!workspace || !workspace.isActive) {
+            return res.status(404).json({ error: 'Business not found' });
+        }
+
+        const template = await prisma.formTemplate.findUnique({
+            where: { id: templateId },
+            select: { id: true, name: true, fields: true, googleFormUrl: true, linkedServiceType: { select: { name: true } } }
+        });
+        if (!template || template.workspaceId === undefined) {
+            // Verify template belongs to workspace
+        }
+        if (!template) {
+            return res.status(404).json({ error: 'Form not found' });
+        }
+
+        res.json({
+            businessName: workspace.name,
+            formName: template.name,
+            fields: template.fields,
+            googleFormUrl: template.googleFormUrl,
+            linkedService: template.linkedServiceType?.name || null
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/public/:workspaceId/form-template/:templateId/submit
+router.post('/:workspaceId/form-template/:templateId/submit', async (req, res, next) => {
+    try {
+        const { workspaceId, templateId } = req.params;
+        const { data, name, email, phone } = req.body;
+
+        const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+        if (!workspace || !workspace.isActive) {
+            return res.status(404).json({ error: 'Business not found' });
+        }
+
+        const template = await prisma.formTemplate.findUnique({ where: { id: templateId } });
+        if (!template) {
+            return res.status(404).json({ error: 'Form not found' });
+        }
+
+        // Find or create contact
+        let contact = null;
+        if (email) {
+            contact = await prisma.contact.findFirst({ where: { workspaceId, email } });
+        }
+        if (!contact && phone) {
+            contact = await prisma.contact.findFirst({ where: { workspaceId, phone } });
+        }
+        if (!contact) {
+            contact = await prisma.contact.create({
+                data: {
+                    workspaceId,
+                    name: name || 'Anonymous',
+                    email: email || null,
+                    phone: phone || null,
+                    source: 'form'
+                }
+            });
+        }
+
+        // Create submission
+        const submission = await prisma.formSubmission.create({
+            data: {
+                formTemplateId: templateId,
+                contactId: contact.id,
+                data: data || {},
+                status: 'COMPLETED'
+            }
+        });
+
+        // Create alert for owner
+        prisma.alert.create({
+            data: {
+                workspaceId,
+                type: 'FORM_SUBMITTED',
+                message: `New form submission: ${template.name} from ${name || email || 'Anonymous'}`,
+                link: '/forms'
+            }
+        }).catch(() => { });
+
+        res.status(201).json({ message: 'Form submitted successfully!', submissionId: submission.id });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ─── Digital Waitlist ──────────────────────────────────
+
+// POST /api/public/:workspaceId/waitlist - Join waitlist for a fully booked slot
+router.post('/:workspaceId/waitlist', async (req, res, next) => {
+    try {
+        const { workspaceId } = req.params;
+        const { serviceTypeId, date, name, email, phone } = req.body;
+
+        const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+        if (!workspace || !workspace.isActive) {
+            return res.status(404).json({ error: 'Business not found or not active' });
+        }
+
+        if (!serviceTypeId || !date || !name) {
+            return res.status(400).json({ error: 'serviceTypeId, date, and name are required' });
+        }
+        if (!email && !phone) {
+            return res.status(400).json({ error: 'Email or phone is required' });
+        }
+
+        const serviceType = await prisma.serviceType.findUnique({ where: { id: serviceTypeId } });
+        if (!serviceType) {
+            return res.status(404).json({ error: 'Service type not found' });
+        }
+
+        // Find or create contact
+        let contact = null;
+        if (email) contact = await prisma.contact.findFirst({ where: { workspaceId, email } });
+        if (!contact && phone) contact = await prisma.contact.findFirst({ where: { workspaceId, phone } });
+        if (!contact) {
+            contact = await prisma.contact.create({
+                data: { workspaceId, name, email: email || null, phone: phone || null, source: 'waitlist' }
+            });
+        }
+
+        // Create or find conversation
+        let conversation = await prisma.conversation.findFirst({
+            where: { contactId: contact.id, workspaceId }
+        });
+        if (!conversation) {
+            conversation = await prisma.conversation.create({
+                data: { workspaceId, contactId: contact.id, status: 'open' }
+            });
+        }
+
+        // Add waitlist message to conversation
+        await prisma.message.create({
+            data: {
+                conversationId: conversation.id,
+                direction: 'INBOUND',
+                channel: 'SYSTEM',
+                content: `Waitlist request: ${name} wants ${serviceType.name} on ${new Date(date).toLocaleDateString()}. Contact: ${email || phone}`,
+                metadata: { type: 'waitlist', serviceTypeId, date, status: 'waiting' }
+            }
+        });
+
+        // Create alert for workspace owner
+        await prisma.alert.create({
+            data: {
+                workspaceId,
+                type: 'SYSTEM',
+                message: `${name} joined the waitlist for ${serviceType.name} on ${new Date(date).toLocaleDateString()}`,
+                link: '/inbox'
+            }
+        });
+
+        res.status(201).json({
+            message: "You've been added to the waitlist! We'll notify you if a spot opens up.",
+            position: 'next'
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;
+

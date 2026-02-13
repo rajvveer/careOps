@@ -1,9 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('./src/lib/prisma');
 const app = express();
 
 // Middleware
@@ -13,9 +11,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Make prisma available to routes
-app.set('prisma', prisma);
 
 // Routes
 app.use('/api/auth', require('./src/routes/auth'));

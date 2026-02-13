@@ -1,10 +1,34 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 class EmailService {
+    /**
+     * Resolve email config: workspace Integration.config > env vars > defaults
+     */
+    async getConfig(workspaceId) {
+        try {
+            const integration = await prisma.integration.findFirst({
+                where: { workspaceId, type: 'EMAIL', isActive: true }
+            });
+            const cfg = integration?.config || {};
+            return {
+                apiKey: cfg.apiKey || process.env.BREVO_API_KEY,
+                senderName: cfg.senderName || process.env.BREVO_SENDER_NAME,
+                senderEmail: cfg.senderEmail || process.env.BREVO_SENDER_EMAIL
+            };
+        } catch {
+            return {
+                apiKey: process.env.BREVO_API_KEY,
+                senderName: process.env.BREVO_SENDER_NAME,
+                senderEmail: process.env.BREVO_SENDER_EMAIL
+            };
+        }
+    }
+
     async send(workspaceId, { to, subject, text, html }) {
         try {
-            const apiKey = process.env.BREVO_API_KEY;
+            const config = await this.getConfig(workspaceId);
+            const apiKey = config.apiKey;
+
             if (!apiKey || apiKey === 'your-brevo-api-key-here') {
                 console.log('📧 [DEMO MODE] Email would be sent to:', to);
                 console.log('   Subject:', subject);
@@ -24,8 +48,8 @@ class EmailService {
                 },
                 body: JSON.stringify({
                     sender: {
-                        name: process.env.BREVO_SENDER_NAME || workspace?.name || 'CareOps',
-                        email: process.env.BREVO_SENDER_EMAIL || workspace?.contactEmail || 'noreply@careops.com'
+                        name: config.senderName || workspace?.name || 'CareOps',
+                        email: config.senderEmail || workspace?.contactEmail || 'noreply@careops.com'
                     },
                     to: [{ email: to }],
                     subject,

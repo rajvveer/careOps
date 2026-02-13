@@ -1,6 +1,5 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const emailService = require('./email');
 const smsService = require('./sms');
 
@@ -138,11 +137,6 @@ cron.schedule('0 */6 * * *', async () => {
 // ─── Inventory Check (runs daily at midnight) ────────
 cron.schedule('0 0 * * *', async () => {
     try {
-        const lowItems = await prisma.inventoryItem.findMany({
-            where: {
-                quantity: { lte: prisma.raw('threshold') }
-            }
-        });
 
         // Fallback: get all items and filter
         const allItems = await prisma.inventoryItem.findMany({

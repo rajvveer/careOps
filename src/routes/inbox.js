@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { checkPermission } = require('../middleware/roleCheck');
 const automation = require('../services/automation');
@@ -98,7 +97,7 @@ router.post('/:conversationId/reply', auth, checkPermission('inbox'), async (req
         });
 
         // Pause automation for this conversation
-        await automation.onStaffReply(req.workspaceId, conversation.id);
+        automation.onStaffReply(req.workspaceId, conversation.id).catch(err => console.error('Automation error:', err.message));
 
         // Send via channel
         if (channel === 'EMAIL' && conversation.contact.email) {

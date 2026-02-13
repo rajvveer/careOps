@@ -1,10 +1,31 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 class SmsService {
+    /**
+     * Resolve SMS config: workspace Integration.config > env vars > defaults
+     */
+    async getConfig(workspaceId) {
+        try {
+            const integration = await prisma.integration.findFirst({
+                where: { workspaceId, type: 'SMS', isActive: true }
+            });
+            const cfg = integration?.config || {};
+            return {
+                apiKey: cfg.apiKey || process.env.BREVO_API_KEY,
+                senderName: cfg.senderName || 'CareOps'
+            };
+        } catch {
+            return {
+                apiKey: process.env.BREVO_API_KEY,
+                senderName: 'CareOps'
+            };
+        }
+    }
+
     async send(workspaceId, { to, body }) {
         try {
-            const apiKey = process.env.BREVO_API_KEY;
+            const config = await this.getConfig(workspaceId);
+            const apiKey = config.apiKey;
 
             // Try Brevo SMS first
             if (apiKey && apiKey !== 'your-brevo-api-key-here') {
@@ -18,7 +39,7 @@ class SmsService {
                     body: JSON.stringify({
                         type: 'transactional',
                         unicodeEnabled: true,
-                        sender: 'CareOps',
+                        sender: config.senderName,
                         recipient: to,
                         content: body
                     })

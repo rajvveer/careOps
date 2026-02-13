@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly } = require('../middleware/roleCheck');
 
@@ -102,6 +101,42 @@ router.put('/onboarding-step', auth, ownerOnly, async (req, res, next) => {
             data: { onboardingStep: step }
         });
         res.json(workspace);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/workspace/contact-form - Get contact form config
+router.get('/contact-form', auth, async (req, res, next) => {
+    try {
+        const workspace = await prisma.workspace.findUnique({
+            where: { id: req.workspaceId },
+            select: { contactFormFields: true }
+        });
+        const defaultFields = [
+            { name: 'Name', type: 'text', required: true },
+            { name: 'Email', type: 'email', required: true },
+            { name: 'Phone', type: 'tel', required: false },
+            { name: 'Message', type: 'textarea', required: true }
+        ];
+        res.json({ fields: workspace?.contactFormFields || defaultFields });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PUT /api/workspace/contact-form - Update contact form config (owner only)
+router.put('/contact-form', auth, ownerOnly, async (req, res, next) => {
+    try {
+        const { fields } = req.body;
+        if (!Array.isArray(fields) || fields.length === 0) {
+            return res.status(400).json({ error: 'Fields must be a non-empty array' });
+        }
+        const workspace = await prisma.workspace.update({
+            where: { id: req.workspaceId },
+            data: { contactFormFields: fields }
+        });
+        res.json({ message: 'Contact form updated', fields: workspace.contactFormFields });
     } catch (error) {
         next(error);
     }

@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
+const { checkPermission } = require('../middleware/roleCheck');
 
 // GET /api/contacts
-router.get('/', auth, async (req, res, next) => {
+router.get('/', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const { search, source, page = 1, limit = 20 } = req.query;
         const skip = (page - 1) * limit;
@@ -40,7 +40,7 @@ router.get('/', auth, async (req, res, next) => {
 });
 
 // GET /api/contacts/:id
-router.get('/:id', auth, async (req, res, next) => {
+router.get('/:id', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const contact = await prisma.contact.findFirst({
             where: { id: req.params.id, workspaceId: req.workspaceId },
@@ -71,7 +71,7 @@ router.get('/:id', auth, async (req, res, next) => {
 });
 
 // POST /api/contacts
-router.post('/', auth, async (req, res, next) => {
+router.post('/', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const { name, email, phone, source } = req.body;
 
@@ -108,7 +108,7 @@ router.post('/', auth, async (req, res, next) => {
 });
 
 // PUT /api/contacts/:id
-router.put('/:id', auth, async (req, res, next) => {
+router.put('/:id', auth, checkPermission('inbox'), async (req, res, next) => {
     try {
         const { name, email, phone } = req.body;
         const contact = await prisma.contact.update({

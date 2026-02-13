@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly, checkPermission } = require('../middleware/roleCheck');
 const automation = require('../services/automation');
@@ -74,7 +73,7 @@ router.put('/:id', auth, checkPermission('inventory'), async (req, res, next) =>
 
         // Check if low stock
         if (item.quantity <= item.threshold) {
-            await automation.onInventoryLow(req.workspaceId, item);
+            automation.onInventoryLow(req.workspaceId, item).catch(err => console.error('Automation error:', err.message));
         }
 
         res.json({ ...item, isLowStock: item.quantity <= item.threshold });

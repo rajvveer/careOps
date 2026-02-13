@@ -2,8 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 
 // POST /api/auth/register
@@ -126,4 +125,40 @@ router.get('/me', auth, async (req, res) => {
     });
 });
 
+// DELETE /api/auth/account — delete user account + workspace
+router.delete('/account', auth, async (req, res, next) => {
+    try {
+        const user = req.user;
+        if (user.role !== 'OWNER') {
+            return res.status(403).json({ error: 'Only workspace owners can delete accounts' });
+        }
+
+        const wId = user.workspaceId;
+
+        // Delete in dependency order (leaf tables first), individually to avoid transaction timeout
+        await prisma.automationLog.deleteMany({ where: { workspaceId: wId } });
+        await prisma.alert.deleteMany({ where: { workspaceId: wId } });
+        await prisma.message.deleteMany({ where: { conversation: { workspaceId: wId } } });
+        await prisma.conversation.deleteMany({ where: { workspaceId: wId } });
+        await prisma.availability.deleteMany({ where: { serviceType: { workspaceId: wId } } });
+        await prisma.formSubmission.deleteMany({ where: { formTemplate: { workspaceId: wId } } });
+        await prisma.booking.deleteMany({ where: { workspaceId: wId } });
+        await prisma.formTemplate.deleteMany({ where: { workspaceId: wId } });
+        await prisma.serviceType.deleteMany({ where: { workspaceId: wId } });
+        await prisma.inventoryItem.deleteMany({ where: { workspaceId: wId } });
+        await prisma.contact.deleteMany({ where: { workspaceId: wId } });
+        await prisma.integration.deleteMany({ where: { workspaceId: wId } });
+        await prisma.staffInvitation.deleteMany({ where: { workspaceId: wId } });
+        await prisma.calendarConnection.deleteMany({ where: { workspaceId: wId } });
+        await prisma.staffPermission.deleteMany({ where: { user: { workspaceId: wId } } });
+        await prisma.user.deleteMany({ where: { workspaceId: wId } });
+        await prisma.workspace.delete({ where: { id: wId } });
+
+        res.json({ message: 'Account deleted successfully' });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;
+

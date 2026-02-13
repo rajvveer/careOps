@@ -1,8 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const emailService = require('./email');
 const smsService = require('./sms');
 const calendarService = require('./calendar');
+const webhookService = require('./webhook');
 
 class AutomationService {
     // ─── Contact Created → Welcome Message ───────────────
@@ -45,6 +45,10 @@ class AutomationService {
             }
 
             await this.log(workspaceId, 'contact.created', 'send_welcome', contact.id);
+            // Fire webhooks
+            await webhookService.fire(workspaceId, 'contact.created', {
+                id: contact.id, name: contact.name, email: contact.email, phone: contact.phone
+            });
         } catch (error) {
             console.error('Automation error (contact.created):', error);
             await this.log(workspaceId, 'contact.created', 'send_welcome', contact.id, 'failed', error.message);
@@ -125,6 +129,11 @@ class AutomationService {
             });
             await calendarService.createEvent(workspaceId, fullBooking);
 
+            // Fire webhooks
+            await webhookService.fire(workspaceId, 'booking.created', {
+                id: booking.id, dateTime: booking.dateTime, contactId: contact.id, contactName: contact.name
+            });
+
             await this.log(workspaceId, 'booking.created', 'send_confirmation', contact.id);
         } catch (error) {
             console.error('Automation error (booking.created):', error);
@@ -169,6 +178,11 @@ class AutomationService {
                     html: `<h3>⚠️ Low Inventory Alert</h3><p><strong>${item.name}</strong> is running low.</p><p>Current: ${item.quantity} ${item.unit}<br>Threshold: ${item.threshold}</p>`
                 });
             }
+
+            // Fire webhooks
+            await webhookService.fire(workspaceId, 'inventory.low', {
+                id: item.id, name: item.name, quantity: item.quantity, threshold: item.threshold
+            });
 
             await this.log(workspaceId, 'inventory.low', 'create_alert', null);
         } catch (error) {

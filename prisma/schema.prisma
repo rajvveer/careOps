@@ -40,6 +40,7 @@ enum IntegrationType {
   EMAIL
   SMS
   CALENDAR
+  WEBHOOK
 }
 
 enum AlertType {
@@ -72,6 +73,7 @@ model Workspace {
   contactEmail    String?
   isActive        Boolean  @default(false)
   onboardingStep  Int      @default(1)
+  contactFormFields Json?
 
   users           User[]
   integrations    Integration[]
@@ -101,6 +103,8 @@ model Integration {
   isActive    Boolean         @default(true)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  @@index([workspaceId])
 }
 
 // ─── Contacts & Conversations ────────────────────────────
@@ -117,6 +121,8 @@ model Contact {
   formSubmissions FormSubmission[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([workspaceId])
 }
 
 model Conversation {
@@ -130,6 +136,9 @@ model Conversation {
   messages         Message[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([workspaceId])
+  @@index([contactId])
 }
 
 model Message {
@@ -141,6 +150,8 @@ model Message {
   content        String
   metadata       Json?
   createdAt      DateTime         @default(now())
+
+  @@index([conversationId])
 }
 
 // ─── Bookings ────────────────────────────────────────────
@@ -151,12 +162,15 @@ model ServiceType {
   name          String
   description   String?
   duration      Int      // minutes
+  price         Float    @default(0)
   location      String?
   availability  Availability[]
   bookings      Booking[]
   formTemplates FormTemplate[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([workspaceId])
 }
 
 model Availability {
@@ -166,6 +180,8 @@ model Availability {
   dayOfWeek     Int         // 0=Sunday, 6=Saturday
   startTime     String      // "09:00"
   endTime       String      // "17:00"
+
+  @@index([serviceTypeId])
 }
 
 model Booking {
@@ -183,6 +199,11 @@ model Booking {
   formSubmissions FormSubmission[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  @@index([workspaceId])
+  @@index([contactId])
+  @@index([serviceTypeId])
+  @@index([dateTime])
 }
 
 // ─── Forms ───────────────────────────────────────────────
@@ -191,12 +212,15 @@ model FormTemplate {
   workspaceId         String
   workspace           Workspace @relation(fields: [workspaceId], references: [id])
   name                String
-  fields              Json     // array of field definitions
+  fields              Json?    // array of field definitions (null for Google Form links)
+  googleFormUrl       String?  // optional Google Form URL
   linkedServiceTypeId String?
   linkedServiceType   ServiceType? @relation(fields: [linkedServiceTypeId], references: [id])
   submissions         FormSubmission[]
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  @@index([workspaceId])
 }
 
 model FormSubmission {
@@ -212,6 +236,10 @@ model FormSubmission {
   dueDate        DateTime?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
+
+  @@index([formTemplateId])
+  @@index([contactId])
+  @@index([bookingId])
 }
 
 // ─── Inventory ───────────────────────────────────────────
@@ -225,6 +253,8 @@ model InventoryItem {
   unit        String    @default("units")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([workspaceId])
 }
 
 // ─── Staff Permissions ───────────────────────────────────
@@ -249,6 +279,8 @@ model AutomationLog {
   status      String    @default("success") // success | failed
   details     String?
   createdAt   DateTime  @default(now())
+
+  @@index([workspaceId])
 }
 
 model Alert {
@@ -260,6 +292,9 @@ model Alert {
   link        String?
   isRead      Boolean   @default(false)
   createdAt   DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@index([isRead])
 }
 
 // ─── Staff Invitations ───────────────────────────────
@@ -273,6 +308,8 @@ model StaffInvitation {
   expiresAt   DateTime
   usedAt      DateTime?
   createdAt   DateTime  @default(now())
+
+  @@index([workspaceId])
 }
 
 // ─── Google Calendar Connection ──────────────────────
@@ -287,4 +324,6 @@ model CalendarConnection {
   expiresAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId])
 }

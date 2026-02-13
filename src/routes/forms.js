@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly, checkPermission } = require('../middleware/roleCheck');
 
@@ -26,17 +25,21 @@ router.get('/templates', auth, async (req, res, next) => {
 // POST /api/forms/templates
 router.post('/templates', auth, ownerOnly, async (req, res, next) => {
     try {
-        const { name, fields, linkedServiceTypeId } = req.body;
+        const { name, fields, linkedServiceTypeId, googleFormUrl } = req.body;
 
-        if (!name || !fields) {
-            return res.status(400).json({ error: 'Name and fields are required' });
+        if (!name) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        if (!fields && !googleFormUrl) {
+            return res.status(400).json({ error: 'Fields or Google Form URL is required' });
         }
 
         const template = await prisma.formTemplate.create({
             data: {
                 workspaceId: req.workspaceId,
                 name,
-                fields,
+                fields: googleFormUrl ? null : fields,
+                googleFormUrl: googleFormUrl || null,
                 linkedServiceTypeId: linkedServiceTypeId || null
             }
         });
@@ -56,12 +59,13 @@ router.post('/templates', auth, ownerOnly, async (req, res, next) => {
 // PUT /api/forms/templates/:id
 router.put('/templates/:id', auth, ownerOnly, async (req, res, next) => {
     try {
-        const { name, fields, linkedServiceTypeId } = req.body;
+        const { name, fields, linkedServiceTypeId, googleFormUrl } = req.body;
         const template = await prisma.formTemplate.update({
             where: { id: req.params.id },
             data: {
                 ...(name && { name }),
-                ...(fields && { fields }),
+                ...(fields !== undefined && { fields }),
+                ...(googleFormUrl !== undefined && { googleFormUrl: googleFormUrl || null }),
                 ...(linkedServiceTypeId !== undefined && { linkedServiceTypeId })
             }
         });

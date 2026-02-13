@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const auth = require('../middleware/auth');
 const { ownerOnly, checkPermission } = require('../middleware/roleCheck');
 
@@ -26,7 +25,7 @@ router.get('/service-types', auth, async (req, res, next) => {
 // POST /api/bookings/service-types
 router.post('/service-types', auth, ownerOnly, async (req, res, next) => {
     try {
-        const { name, description, duration, location } = req.body;
+        const { name, description, duration, price, location } = req.body;
 
         if (!name || !duration) {
             return res.status(400).json({ error: 'Name and duration are required' });
@@ -38,6 +37,7 @@ router.post('/service-types', auth, ownerOnly, async (req, res, next) => {
                 name,
                 description: description || null,
                 duration: Number(duration),
+                price: price !== undefined ? Number(price) : 0,
                 location: location || null
             }
         });
@@ -57,13 +57,14 @@ router.post('/service-types', auth, ownerOnly, async (req, res, next) => {
 // PUT /api/bookings/service-types/:id
 router.put('/service-types/:id', auth, ownerOnly, async (req, res, next) => {
     try {
-        const { name, description, duration, location } = req.body;
+        const { name, description, duration, price, location } = req.body;
         const serviceType = await prisma.serviceType.update({
             where: { id: req.params.id },
             data: {
                 ...(name && { name }),
                 ...(description !== undefined && { description }),
                 ...(duration && { duration: Number(duration) }),
+                ...(price !== undefined && { price: Number(price) }),
                 ...(location !== undefined && { location })
             }
         });
@@ -123,6 +124,51 @@ router.get('/availability/:serviceTypeId', auth, async (req, res, next) => {
             where: { serviceTypeId: req.params.serviceTypeId }
         });
         res.json(availability);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/bookings/availability/add - Add slots without deleting existing ones
+router.post('/availability/add', auth, ownerOnly, async (req, res, next) => {
+    try {
+        const { serviceTypeId, slots } = req.body;
+
+        if (!serviceTypeId || !slots || !slots.length) {
+            return res.status(400).json({ error: 'serviceTypeId and slots are required' });
+        }
+
+        // Filter out duplicates — skip slots that already exist
+        const existing = await prisma.availability.findMany({ where: { serviceTypeId } });
+        const newSlots = slots.filter(slot => !existing.some(
+            e => e.dayOfWeek === slot.dayOfWeek && e.startTime === slot.startTime && e.endTime === slot.endTime
+        ));
+
+        if (newSlots.length === 0) {
+            return res.status(400).json({ error: 'This slot already exists for this service' });
+        }
+
+        await prisma.availability.createMany({
+            data: newSlots.map(slot => ({
+                serviceTypeId,
+                dayOfWeek: slot.dayOfWeek,
+                startTime: slot.startTime,
+                endTime: slot.endTime
+            }))
+        });
+
+        const availability = await prisma.availability.findMany({ where: { serviceTypeId } });
+        res.status(201).json(availability);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// DELETE /api/bookings/availability/:id - Remove a single slot
+router.delete('/availability/:id', auth, ownerOnly, async (req, res, next) => {
+    try {
+        await prisma.availability.delete({ where: { id: req.params.id } });
+        res.json({ message: 'Slot removed' });
     } catch (error) {
         next(error);
     }
