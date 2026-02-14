@@ -415,7 +415,7 @@ router.get('/activity', auth, async (req, res, next) => {
         const [logs, total] = await Promise.all([
             prisma.automationLog.findMany({
                 where: { workspaceId },
-                orderBy: { executedAt: 'desc' },
+                orderBy: { createdAt: 'desc' },
                 skip,
                 take: limit
             }),
