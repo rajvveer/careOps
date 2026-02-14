@@ -28,6 +28,12 @@ app.use('/api/ai', require('./src/routes/ai'));
 app.use('/api/calendar', require('./src/routes/calendar'));
 app.use('/api/files', require('./src/routes/files'));
 
+// Google OAuth callback redirect (matches Google Cloud redirect URI)
+app.get('/auth/google/callback', (req, res) => {
+  const qs = new URLSearchParams(req.query).toString();
+  res.redirect(`/api/calendar/callback?${qs}`);
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

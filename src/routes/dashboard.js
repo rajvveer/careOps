@@ -27,7 +27,7 @@ router.get('/', auth, async (req, res, next) => {
     try {
         const workspaceId = req.workspaceId;
         const cacheKey = `dash:${workspaceId}`;
-        const cached = getCached(cacheKey, 60_000); // 60s TTL
+        const cached = getCached(cacheKey, 10_000); // 10s TTL — fast refresh
         if (cached) return res.json(cached);
 
         const now = new Date();
@@ -135,7 +135,7 @@ router.get('/analytics', auth, async (req, res, next) => {
     try {
         const workspaceId = req.workspaceId;
         const cacheKey = `analytics:${workspaceId}`;
-        const cached = getCached(cacheKey, 300_000); // 5-minute TTL
+        const cached = getCached(cacheKey, 30_000); // 30s TTL
         if (cached) return res.json(cached);
 
         const now = new Date();
@@ -283,8 +283,8 @@ router.get('/weekly-report', auth, async (req, res, next) => {
         const thisWeekRevenue = thisWeekBookings.reduce((s, b) => s + Number(b.serviceType?.price || 0), 0);
         const noShows = thisWeekBookings.filter(b => b.status === 'NO_SHOW').length;
         const completed = thisWeekBookings.filter(b => b.status === 'COMPLETED').length;
-        const bookingGrowth = lastWeekBookingsCount > 0 ? Math.round(((thisWeekBookings.length - lastWeekBookingsCount) / lastWeekBookingsCount) * 100) : 0;
-        const contactGrowth = lastWeekContacts > 0 ? Math.round(((thisWeekContacts - lastWeekContacts) / lastWeekContacts) * 100) : 0;
+        const bookingGrowth = lastWeekBookingsCount > 0 ? Math.round(((thisWeekBookings.length - lastWeekBookingsCount) / lastWeekBookingsCount) * 100) : thisWeekBookings.length > 0 ? 100 : 0;
+        const contactGrowth = lastWeekContacts > 0 ? Math.round(((thisWeekContacts - lastWeekContacts) / lastWeekContacts) * 100) : thisWeekContacts > 0 ? 100 : 0;
         const lowStockCount = allInventory.filter(i => i.quantity <= i.threshold).length;
 
         // Try AI-generated summary
@@ -293,23 +293,7 @@ router.get('/weekly-report', auth, async (req, res, next) => {
             const Groq = require('groq-sdk');
             if (process.env.GROQ_API_KEY) {
                 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-                const prompt = `You are Cara, a business analytics AI. Generate a concise weekly report for "${workspace?.name || 'this business'}".
-
-Stats this week:
-- ${thisWeekBookings.length} bookings (${bookingGrowth > 0 ? '+' : ''}${bookingGrowth}% vs last week)
-- $${thisWeekRevenue} revenue
-- ${completed} completed, ${noShows} no-shows
-- ${thisWeekContacts} new contacts (${contactGrowth > 0 ? '+' : ''}${contactGrowth}% vs last week)
-- ${openConversations} open conversations
-- ${pendingForms} pending forms, ${overdueForms} overdue
-- Low stock items: ${lowStockCount}
-
-Rules:
-- 3-4 short sentences max
-- Highlight wins first, then concerns
-- Be specific with numbers
-- Sound like a smart, friendly analyst
-- No markdown or emojis`;
+                const prompt = `You are Cara, a warm and emotionally expressive business analytics AI. Generate a concise weekly report for "${workspace?.name || 'this business'}".\r\n\r\nStats this week:\r\n- ${thisWeekBookings.length} bookings (${bookingGrowth > 0 ? '+' : ''}${bookingGrowth}% vs last week)\r\n- $${thisWeekRevenue} revenue\r\n- ${completed} completed, ${noShows} no-shows\r\n- ${thisWeekContacts} new contacts (${contactGrowth > 0 ? '+' : ''}${contactGrowth}% vs last week)\r\n- ${openConversations} open conversations\r\n- ${pendingForms} pending forms, ${overdueForms} overdue\r\n- Low stock items: ${lowStockCount}\r\n\r\nRules:\r\n- 3-4 short sentences max\r\n- Show genuine emotion — celebrate wins enthusiastically, express real concern about problems\r\n- Use warm, conversational language (\"honestly\", \"love to see\", \"heads up\")\r\n- Be specific with numbers, weave them into natural sentences\r\n- Sound like a caring friend who's also brilliant with data\r\n- Use 1-2 emojis naturally (🎉 📈 ⚡ 💪) but don't overdo it\r\n- No markdown formatting`;
 
                 const completion = await groq.chat.completions.create({
                     messages: [{ role: 'user', content: prompt }],
@@ -430,3 +414,4 @@ router.get('/activity', auth, async (req, res, next) => {
 });
 
 module.exports = { router, invalidateWorkspaceCache };
+

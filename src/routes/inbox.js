@@ -112,9 +112,9 @@ router.post('/:conversationId/reply', auth, checkPermission('inbox'), async (req
             });
         }
 
-        if (channel === 'SMS' && conversation.contact.phone) {
-            const smsService = require('../services/sms');
-            await smsService.send(req.workspaceId, { to: conversation.contact.phone, body: content });
+        if (channel === 'WHATSAPP' && conversation.contact.phone) {
+            const whatsappService = require('../services/whatsapp');
+            await whatsappService.send(req.workspaceId, { to: conversation.contact.phone, body: content });
         }
 
         // Update conversation

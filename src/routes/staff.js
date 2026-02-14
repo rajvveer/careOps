@@ -231,6 +231,27 @@ router.post('/register/:token', async (req, res, next) => {
                 workspaceId: result.workspaceId
             }
         });
+
+        // Log staff joined event (fire-and-forget)
+        prisma.alert.create({
+            data: {
+                workspaceId: invitation.workspaceId,
+                type: 'STAFF_JOINED',
+                message: `${name} joined the team as staff`,
+                link: '/staff'
+            }
+        }).catch(() => { });
+
+        prisma.automationLog.create({
+            data: {
+                workspaceId: invitation.workspaceId,
+                event: 'staff.joined',
+                action: 'staff_joined',
+                contactId: null,
+                status: 'success',
+                details: JSON.stringify({ staffName: name, email: invitation.email })
+            }
+        }).catch(() => { });
     } catch (error) {
         next(error);
     }
@@ -267,9 +288,34 @@ router.put('/:id/permissions', auth, ownerOnly, async (req, res, next) => {
 // DELETE /api/staff/:id
 router.delete('/:id', auth, ownerOnly, async (req, res, next) => {
     try {
+        // Get staff info before deleting for logging
+        const staffUser = await prisma.user.findUnique({ where: { id: req.params.id }, select: { name: true, email: true } });
         await prisma.staffPermission.deleteMany({ where: { userId: req.params.id } });
         await prisma.user.delete({ where: { id: req.params.id } });
         res.json({ message: 'Staff member removed' });
+
+        // Log staff removal (fire-and-forget)
+        if (staffUser) {
+            prisma.alert.create({
+                data: {
+                    workspaceId: req.workspaceId,
+                    type: 'SYSTEM',
+                    message: `${staffUser.name} was removed from the team`,
+                    link: '/staff'
+                }
+            }).catch(() => { });
+
+            prisma.automationLog.create({
+                data: {
+                    workspaceId: req.workspaceId,
+                    event: 'staff.removed',
+                    action: 'staff_removed',
+                    contactId: null,
+                    status: 'success',
+                    details: JSON.stringify({ staffName: staffUser.name, email: staffUser.email, removedBy: req.user.name })
+                }
+            }).catch(() => { });
+        }
     } catch (error) {
         next(error);
     }

@@ -20,8 +20,8 @@ class AiOnboardingService {
             },
             2: {
                 title: 'Communication Channels',
-                description: 'Connect email and SMS to enable customer communication',
-                fields: ['Email Integration', 'SMS Integration']
+                description: 'Connect email and WhatsApp to enable customer communication',
+                fields: ['Email Integration', 'WhatsApp Integration']
             },
             3: {
                 title: 'Contact Form',
@@ -77,7 +77,7 @@ class AiOnboardingService {
                 if (userSelections.formName) selectionContext += `\nForm type picked: "${userSelections.formName}"`;
                 if (userSelections.inventoryItem) selectionContext += `\nInventory item: "${userSelections.inventoryItem}"`;
                 if (userSelections.emailConnected) selectionContext += `\nEmail: Connected ✓`;
-                if (userSelections.smsConnected) selectionContext += `\nSMS: Connected ✓`;
+                if (userSelections.calendarConnected) selectionContext += `\nGoogle Calendar: Connected ✓`;
                 if (userSelections.serviceCreated) selectionContext += `\nService was just created successfully!`;
                 if (userSelections.formCreated) selectionContext += `\nForm was just created successfully!`;
                 if (userSelections.inviteSent) selectionContext += `\nStaff invitation was just sent!`;
@@ -86,13 +86,25 @@ class AiOnboardingService {
 
             const stepPersonality = {
                 1: 'This is the very first step — set a confident, welcoming tone. Comment on their business name if provided.',
-                2: 'Talk about how communication channels unlock their business. Be brief and practical.',
+                2: 'Focus on connecting Email and Google Calendar. Email enables booking confirmations and reminders. Calendar auto-syncs appointments. WhatsApp and SMS are coming soon — do NOT mention them. Be brief and practical.',
                 3: 'Get them excited about their public-facing contact page and how clients will find them.',
-                4: 'Help them feel confident about their service setup. Focus ONLY on the service being created. Do NOT mention intake forms, forms, or any later steps.',
+                4: 'Focus ONLY on booking services, availability slots, duration, and pricing. STRICTLY FORBIDDEN on this step: intake forms, waivers, forms of any kind, inventory, staff, or anything beyond service setup.',
                 5: 'Explain why intake forms save time. Make it feel easy and automated.',
                 6: 'Inventory can feel tedious — make it feel quick and worthwhile. Emphasize the alert system.',
                 7: 'Team step — be casual. Acknowledge they might not need this yet.',
                 8: 'This is the finish line! Be celebratory but genuine, not over the top.'
+            };
+
+            // Step-specific forbidden topics to prevent AI from mentioning future steps
+            const forbiddenTopics = {
+                1: 'Do NOT mention: email, WhatsApp, channels, services, forms, inventory, staff.',
+                2: 'Do NOT mention: WhatsApp, SMS, text messages, services, bookings, forms, intake forms, inventory, staff.',
+                3: 'Do NOT mention: services, bookings, forms, inventory, staff.',
+                4: 'Do NOT mention: intake forms, forms, waivers, paperwork, inventory, stock, staff, team, or finishing.',
+                5: 'Do NOT mention: inventory, stock, staff, team, or finishing.',
+                6: 'Do NOT mention: staff, team, or finishing.',
+                7: 'Do NOT mention: finishing or launching.',
+                8: ''
             };
 
             const prompt = `You are Cara, a friendly AI setup assistant for CareOps — a business operations platform.
@@ -112,7 +124,8 @@ Rules:
 - If they selected something, acknowledge it specifically and give a UNIQUE insight (not just "nice pick")
 - DO NOT use filler phrases like "nice pick", "you're crushing it", "love that", "great choice", "ooh" — be original
 - Every response must feel different from the last one. Vary your opening, structure, and closing
-- CRITICAL: NEVER mention steps the user hasn't reached yet. On step 4, do NOT mention intake forms, forms, inventory, or any later topics. Only talk about the CURRENT step.
+- CRITICAL: NEVER mention steps the user hasn't reached yet. Only talk about the CURRENT step.
+- ${forbiddenTopics[step] || ''}
 - Max 70 words
 - NO markdown, emojis, or formatting — just spoken text
 - End with a clear call to action for what to do next on this step`;
@@ -120,7 +133,7 @@ Rules:
             const completion = await this.groq.chat.completions.create({
                 messages: [{ role: 'user', content: prompt }],
                 model: 'llama-3.3-70b-versatile',
-                temperature: 0.85,
+                temperature: 0.7,
                 max_tokens: 180,
             });
 
@@ -275,7 +288,7 @@ Rules:
 
         const onboardingSuggestions = {
             1: ["What should my timezone be?", "Can I change this later?", "What's a workspace?"],
-            2: ["Why do I need email?", "Is SMS required?", "How do notifications work?"],
+            2: ["Why do I need email?", "Is WhatsApp required?", "How do notifications work?"],
             3: ["How do clients find my form?", "Can I add custom fields?", "Where do I share this?"],
             4: ["What service should I create?", "How long should sessions be?", "Can I add more later?"],
             5: ["What's an intake form?", "Do forms auto-send?", "What fields should I add?"],
@@ -290,7 +303,7 @@ Rules:
         const name = businessName || 'your business';
         const scripts = {
             1: `Hey! Welcome to CareOps. I'm Cara, and I'll walk you through the setup. So first up, let's check out your workspace. This is your home base, everything lives here. You'll see your business name, address, timezone, and contact email. If anything looks off, just update it later in Settings. Ready? Let's go!`,
-            2: `Now we're setting up how you talk to clients. You've got email and SMS. Email's great for booking confirmations and follow-ups. SMS is perfect for quick reminders. I'd say connect at least email to start. Just tap Connect and you're good!`,
+            2: `Now we're setting up how you talk to clients. You've got email and WhatsApp. Email's great for booking confirmations and follow-ups. WhatsApp is perfect for quick reminders and real-time chats. I'd say connect at least email to start. Just tap Connect and you're good!`,
             3: `Let's set up your public contact page! This is where new clients can reach you directly. The default form collects name, email, phone, and a message. You can customize the fields if you like. Once you're happy with it, copy the link and share it on your website or social media!`,
             4: `Let's create your first service! I've got some suggestions for you. Just pick the one that fits, or type your own. Then choose how long it takes, the price, and where it happens. Once you save, clients get a beautiful booking page automatically. Don't overthink it, you can add more later!`,
             5: `Now let's set up forms. Pick a form type, like an intake form or consent form. We'll add basic fields automatically. These forms auto-send to clients after they book, so everything's ready before their appointment. You can always add more fields later from the Forms page.`,

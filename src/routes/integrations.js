@@ -25,8 +25,8 @@ router.post('/', auth, ownerOnly, async (req, res, next) => {
             return res.status(400).json({ error: 'Type and provider are required' });
         }
 
-        if (!['EMAIL', 'SMS', 'WEBHOOK', 'CALENDAR', 'FILE_STORAGE'].includes(type)) {
-            return res.status(400).json({ error: 'Type must be EMAIL, SMS, CALENDAR, WEBHOOK, or FILE_STORAGE' });
+        if (!['EMAIL', 'WEBHOOK', 'CALENDAR', 'FILE_STORAGE', 'WHATSAPP'].includes(type)) {
+            return res.status(400).json({ error: 'Type must be EMAIL, CALENDAR, WEBHOOK, FILE_STORAGE, or WHATSAPP' });
         }
 
         const integration = await prisma.integration.create({
@@ -103,8 +103,9 @@ router.post('/:id/test', auth, ownerOnly, async (req, res, next) => {
             return res.json({ success: result.success, message: result.success ? 'Test email sent' : result.error });
         }
 
-        if (integration.type === 'SMS') {
-            return res.json({ success: true, message: 'SMS integration configured successfully (test requires a valid phone number)' });
+
+        if (integration.type === 'WHATSAPP') {
+            return res.json({ success: true, message: 'WhatsApp integration configured successfully (test requires a verified phone number)' });
         }
 
         res.json({ success: true, message: 'Integration test passed' });

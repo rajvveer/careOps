@@ -105,6 +105,28 @@ router.post('/login', async (req, res, next) => {
             },
             workspace: user.workspace
         });
+
+        // Log login activity (fire-and-forget)
+        prisma.alert.create({
+            data: {
+                workspaceId: user.workspaceId,
+                type: 'STAFF_LOGIN',
+                message: `${user.name} (${user.role.toLowerCase()}) logged in`,
+                link: '/staff',
+                isRead: true
+            }
+        }).catch(() => { });
+
+        prisma.automationLog.create({
+            data: {
+                workspaceId: user.workspaceId,
+                event: 'user.login',
+                action: 'staff_login',
+                contactId: null,
+                status: 'success',
+                details: JSON.stringify({ userName: user.name, role: user.role, email: user.email })
+            }
+        }).catch(() => { });
     } catch (error) {
         next(error);
     }

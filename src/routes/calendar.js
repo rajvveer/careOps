@@ -9,8 +9,10 @@ const calendarService = require('../services/calendar');
 router.get('/connect', auth, ownerOnly, async (req, res, next) => {
     try {
         const authUrl = calendarService.getAuthUrl();
-        // Store workspaceId in state param for callback
-        const stateUrl = `${authUrl}&state=${req.workspaceId}`;
+        // Encode workspaceId + redirect origin in state
+        const from = req.query.from || 'settings';
+        const state = Buffer.from(JSON.stringify({ workspaceId: req.workspaceId, from })).toString('base64');
+        const stateUrl = `${authUrl}&state=${encodeURIComponent(state)}`;
         res.json({ authUrl: stateUrl });
     } catch (error) {
         next(error);
@@ -20,10 +22,20 @@ router.get('/connect', auth, ownerOnly, async (req, res, next) => {
 // GET /api/calendar/callback - OAuth callback (redirected by Google)
 router.get('/callback', async (req, res, next) => {
     try {
-        const { code, state: workspaceId } = req.query;
+        const { code, state } = req.query;
 
         if (!code) {
             return res.status(400).json({ error: 'Authorization code missing' });
+        }
+
+        // Decode state to get workspaceId and redirect origin
+        let workspaceId, from = 'settings';
+        try {
+            const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+            workspaceId = decoded.workspaceId;
+            from = decoded.from || 'settings';
+        } catch {
+            workspaceId = state; // fallback: state is just workspaceId
         }
 
         const oauth2Client = calendarService.getOAuth2Client();
@@ -31,11 +43,11 @@ router.get('/callback', async (req, res, next) => {
 
         await calendarService.saveConnection(workspaceId, tokens);
 
-        // Redirect back to frontend
-        res.redirect(`${process.env.FRONTEND_URL}/settings/calendar?connected=true`);
+        // Redirect to success page
+        res.redirect(`${process.env.FRONTEND_URL}/calendar-connected?from=${from}`);
     } catch (error) {
-        console.error('Calendar callback error:', error);
-        res.redirect(`${process.env.FRONTEND_URL}/settings/calendar?error=true`);
+        console.error('Calendar callback error:', error.message, error.response?.data || '');
+        res.redirect(`${process.env.FRONTEND_URL}/calendar-connected?error=true`);
     }
 });
 

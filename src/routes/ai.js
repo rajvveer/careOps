@@ -152,6 +152,98 @@ Example output: ["Item 1", "Item 2", "Item 3"]`
     }
 });
 
+// POST /api/ai/form-suggestions - AI-generated intake form name + field suggestions
+router.post('/form-suggestions', auth, async (req, res, next) => {
+    try {
+        const workspace = req.user.workspace;
+        const businessName = workspace?.name || 'business';
+
+        const prisma = require('../lib/prisma');
+        const serviceTypes = await prisma.serviceType.findMany({
+            where: { workspaceId: req.workspaceId },
+            take: 3,
+            select: { name: true }
+        });
+        const serviceNames = serviceTypes.map(s => s.name).join(', ') || 'general services';
+
+        const Groq = require('groq-sdk');
+        const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+
+        if (!groq) {
+            return res.json({
+                formNames: ['Client Intake Form', 'Consent Form', 'Health History', 'Service Agreement'],
+                fields: [
+                    { name: 'Medical History', type: 'textarea' },
+                    { name: 'Allergies', type: 'text' },
+                    { name: 'Emergency Contact', type: 'text' },
+                    { name: 'Insurance Provider', type: 'text' }
+                ],
+                aiGenerated: false
+            });
+        }
+
+        const completion = await groq.chat.completions.create({
+            messages: [{
+                role: 'user',
+                content: `You are helping a business owner create an intake form for their clients.
+
+Business name: "${businessName}"
+Services offered: ${serviceNames}
+
+Generate form name suggestions and form fields that this SPECIFIC type of business would need. Everything MUST be directly relevant to the services offered.
+
+Rules:
+- Return ONLY a JSON object with "formNames" (array of 4 strings) and "fields" (array of 4 objects)
+- formNames: 4 different short, professional form name options (e.g., ["Patient Intake Form", "Health Assessment", "Medical Questionnaire", "Consultation Form"])
+- fields: exactly 4 objects with "name" and "type"
+- field name: 1-3 words, descriptive
+- field type: one of "text", "textarea", "checkbox"
+- Be specific to the business (e.g., clinic → "Medical History", spa → "Skin Type", gym → "Fitness Goals")
+- Do NOT include Name, Email, Phone — those are already collected separately
+
+Example: {"formNames":["Patient Intake Form","Health Assessment","Medical Questionnaire","Consultation Form"],"fields":[{"name":"Medical History","type":"textarea"},{"name":"Allergies","type":"text"},{"name":"Emergency Contact","type":"text"},{"name":"Insurance","type":"text"}]}`
+            }],
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0.5,
+            max_tokens: 400,
+        });
+
+        let result;
+        try {
+            const raw = completion.choices[0]?.message?.content || '{}';
+            const jsonMatch = raw.match(/\{[\s\S]*\}/);
+            result = JSON.parse(jsonMatch ? jsonMatch[0] : raw.trim());
+            if (!Array.isArray(result.formNames) || !Array.isArray(result.fields)) throw new Error('Invalid format');
+            result.formNames = result.formNames.slice(0, 4);
+            result.fields = result.fields.slice(0, 4);
+        } catch {
+            result = {
+                formNames: ['Client Intake Form', 'Consent Form', 'Health History', 'Service Agreement'],
+                fields: [
+                    { name: 'Medical History', type: 'textarea' },
+                    { name: 'Allergies', type: 'text' },
+                    { name: 'Emergency Contact', type: 'text' },
+                    { name: 'Insurance Provider', type: 'text' }
+                ]
+            };
+        }
+
+        res.json({ ...result, aiGenerated: true });
+    } catch (error) {
+        console.error('AI form suggestions error:', error.message);
+        res.json({
+            formNames: ['Client Intake Form', 'Consent Form', 'Health History', 'Service Agreement'],
+            fields: [
+                { name: 'Medical History', type: 'textarea' },
+                { name: 'Allergies', type: 'text' },
+                { name: 'Emergency Contact', type: 'text' },
+                { name: 'Insurance Provider', type: 'text' }
+            ],
+            aiGenerated: false
+        });
+    }
+});
+
 // POST /api/ai/dashboard-chat - Dashboard AI assistant with full workspace context
 router.post('/dashboard-chat', auth, async (req, res, next) => {
     try {

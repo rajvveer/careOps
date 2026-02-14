@@ -64,7 +64,7 @@ router.post('/activate', auth, ownerOnly, async (req, res, next) => {
             where: { workspaceId, isActive: true }
         });
         if (integrations.length === 0) {
-            return res.status(400).json({ error: 'At least one communication channel (Email or SMS) must be configured' });
+            return res.status(400).json({ error: 'At least one communication channel (Email or WhatsApp) must be configured' });
         }
 
         const serviceTypes = await prisma.serviceType.findMany({

@@ -78,7 +78,13 @@ router.put('/templates/:id', auth, ownerOnly, async (req, res, next) => {
 // DELETE /api/forms/templates/:id
 router.delete('/templates/:id', auth, ownerOnly, async (req, res, next) => {
     try {
-        await prisma.formTemplate.delete({ where: { id: req.params.id } });
+        // Delete related submissions first to avoid FK constraint violation
+        await prisma.formSubmission.deleteMany({
+            where: { formTemplateId: req.params.id }
+        });
+        await prisma.formTemplate.delete({
+            where: { id: req.params.id, workspaceId: req.workspaceId }
+        });
         res.json({ message: 'Form template deleted' });
     } catch (error) {
         next(error);

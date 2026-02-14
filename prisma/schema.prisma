@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
 }
 
 enum Role {
@@ -19,8 +19,8 @@ enum MessageDirection {
 
 enum MessageChannel {
   EMAIL
-  SMS
   SYSTEM
+  WHATSAPP
 }
 
 enum BookingStatus {
@@ -38,10 +38,10 @@ enum FormSubmissionStatus {
 
 enum IntegrationType {
   EMAIL
-  SMS
   CALENDAR
   WEBHOOK
   FILE_STORAGE
+  WHATSAPP
 }
 
 enum AlertType {
@@ -50,6 +50,8 @@ enum AlertType {
   OVERDUE_FORM
   LOW_INVENTORY
   SYSTEM
+  STAFF_LOGIN
+  STAFF_JOINED
 }
 
 // ─── Users & Workspace ───────────────────────────────────
